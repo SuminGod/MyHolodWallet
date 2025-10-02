@@ -1,0 +1,9 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "python bot_finance.py"
+
+[[services]]
+name = "bot"
+type = "worker"
