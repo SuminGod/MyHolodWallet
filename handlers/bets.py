@@ -17,14 +17,15 @@ logger = logging.getLogger(__name__)
 # Подключение к Google Sheets
 try:
     from config import GSHEET_CREDS
-import gspread
-
-if GSHEET_CREDS:
-    gc = gspread.service_account_from_dict(GSHEET_CREDS)
-else:
-    gc = gspread.service_account(filename='creds.json')
-
-sheet_bets = gc.open(GSHEET_NAME).worksheet("Ставки")
+    import gspread
+    
+    if GSHEET_CREDS:
+        gc = gspread.service_account_from_dict(GSHEET_CREDS)
+    else:
+        gc = gspread.service_account(filename='creds.json')
+        
+    sheet_bets = gc.open(GSHEET_NAME).worksheet("Ставки")
+    logger.info("✅ Таблица 'Ставки' подключена")
 except Exception as e:
     logger.error(f"❌ Ошибка подключения к таблице 'Ставки': {e}")
     # Создаем заглушку чтобы бот не падал
@@ -185,3 +186,4 @@ async def back_to_main(message: Message, state: FSMContext):
 async def handle_bets_button(message: Message):
 
     await bets_main(message)
+
