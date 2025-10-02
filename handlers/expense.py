@@ -13,7 +13,14 @@ from config import GSHEET_NAME, GSHEET_CREDS_JSON
 router = Router()
 
 # Подключение к Google Sheets
-gc = gspread.service_account(filename=GSHEET_CREDS_JSON)
+from config import GSHEET_CREDS
+import gspread
+
+if GSHEET_CREDS:
+    gc = gspread.service_account_from_dict(GSHEET_CREDS)
+else:
+    gc = gspread.service_account(filename='creds.json')
+
 sheet_expense = gc.open(GSHEET_NAME).worksheet("Расходы")
 
 class ExpenseStates(StatesGroup):
@@ -62,4 +69,5 @@ async def back_to_main(message: Message, state: FSMContext):
     # Обработчик для кнопки добавления расхода
 @router.message(lambda m: m.text == "📤 Добавить расход")
 async def handle_expense_button(message: Message, state: FSMContext):
+
     await add_expense_start(message, state)
