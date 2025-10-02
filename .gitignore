@@ -1,0 +1,7 @@
+# Секретные файлы
+creds.json
+.env
+*.key
+*.pem
+__pycache__/
+.venv/
