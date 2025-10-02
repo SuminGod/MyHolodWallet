@@ -1,6 +1,12 @@
 # bot_finance.py
 import logging
 import asyncio
+import sys
+import os
+
+# Добавляем путь для импортов
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 
@@ -23,31 +29,26 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
 # =======================
-# Регистрация роутеров - ВАЖНО: base_router ПОСЛЕДНИМ!
+# Регистрация роутеров
 # =======================
 dp.include_router(income_router)
-dp.include_router(expense_router) 
+dp.include_router(expense_router)
 dp.include_router(reports_router)
 dp.include_router(bets_router)
-dp.include_router(base_router)  # base_router ДОЛЖЕН БЫТЬ ПОСЛЕДНИМ!
+dp.include_router(base_router)
 
-
-# После регистрации роутеров добавь:
-print("✅ Порядок роутеров:")
-for i, router in enumerate(dp.sub_routers):
-    print(f"   {i+1}. {router}")
-    
 # =======================
 # Запуск бота
 # =======================
 async def main():
-    try:
-        logger.info("🚀 Бот запускается...")
-        await dp.start_polling(bot)
-    except Exception as e:
-        logger.error(f"❌ Ошибка при запуске бота: {e}")
-    finally:
-        await bot.session.close()
+    while True:
+        try:
+            logger.info("🚀 Бот запускается...")
+            await dp.start_polling(bot)
+        except Exception as e:
+            logger.error(f"❌ Ошибка: {e}")
+            logger.info("🔄 Перезапуск через 30 секунд...")
+            await asyncio.sleep(30)
 
 if __name__ == "__main__":
     asyncio.run(main())
