@@ -14,7 +14,14 @@ from config import GSHEET_NAME, GSHEET_CREDS_JSON
 router = Router()
 
 # Подключение к Google Sheets
-gc = gspread.service_account(filename=GSHEET_CREDS_JSON)
+from config import GSHEET_CREDS
+import gspread
+
+if GSHEET_CREDS:
+    gc = gspread.service_account_from_dict(GSHEET_CREDS)
+else:
+    gc = gspread.service_account(filename='creds.json')
+
 sheet_income = gc.open(GSHEET_NAME).worksheet("Доходы")
 sheet_tips = gc.open(GSHEET_NAME).worksheet("Чаевые")
 
@@ -199,4 +206,5 @@ async def handle_income_button(message: Message, state: FSMContext):
 
 @router.message(lambda m: m.text == "💰 Чаевые")
 async def handle_tips_button(message: Message, state: FSMContext):
+
     await add_tips_start(message, state)
