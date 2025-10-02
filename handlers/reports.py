@@ -15,7 +15,14 @@ router = Router()
 logger = logging.getLogger(__name__)
 
 # Подключение к Google Sheets
-gc = gspread.service_account(filename=GSHEET_CREDS_JSON)
+from config import GSHEET_CREDS
+import gspread
+
+if GSHEET_CREDS:
+    gc = gspread.service_account_from_dict(GSHEET_CREDS)
+else:
+    gc = gspread.service_account(filename='creds.json')
+
 sheet_income = gc.open(GSHEET_NAME).worksheet("Доходы")
 sheet_expense = gc.open(GSHEET_NAME).worksheet("Расходы")
 sheet_tips = gc.open(GSHEET_NAME).worksheet("Чаевые")
@@ -219,4 +226,5 @@ async def back_to_main(message: Message, state: FSMContext):
     # Обработчик для кнопки отчетов
 @router.message(lambda m: m.text == "📊 Отчет")
 async def handle_report_button(message: Message):
+
     await show_reports(message)
