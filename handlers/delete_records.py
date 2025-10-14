@@ -6,7 +6,6 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import InlineKeyboardButton
-import gspread
 
 from keyboards import main_kb
 from utils.user_manager import sheets_manager
