@@ -15,7 +15,6 @@ router = Router()
 class DeleteStates(StatesGroup):
     select_category = State()
     select_record = State()
-    confirm_delete = State()
 
 # ========== УДАЛЕНИЕ ЗАПИСЕЙ ==========
 @router.message(lambda m: m.text == "🗑️ Удалить записи")
@@ -30,7 +29,6 @@ async def delete_records_start(message: Message, state: FSMContext):
     keyboard.add(InlineKeyboardButton(text="❌ Отмена", callback_data="delete_cancel"))
     keyboard.adjust(2, 2, 1)
     
-    # Всегда отправляем новое сообщение вместо редактирования
     await message.answer(
         "🗑️ Выбери категорию для удаления записей:",
         reply_markup=keyboard.as_markup()
@@ -47,18 +45,17 @@ async def process_category_selection(callback: CallbackQuery, state: FSMContext)
     records = await get_user_records(user_id, category)
     
     if not records:
-        # Удаляем предыдущее сообщение и отправляем новое
-        await callback.message.delete()
-        await callback.message.answer(
-            "❌ В этой категории нет записей для удаления",
-            reply_markup=InlineKeyboardBuilder()
-                .add(InlineKeyboardButton(text="⬅️ Назад к категориям", callback_data="delete_back_to_categories"))
-                .as_markup()
+        await callback.message.edit_text(
+            "❌ В этой категории нет записей для удаления\n\n"
+            "🏠 Возврат в главное меню",
+            reply_markup=None
         )
+        await callback.message.answer("Главное меню:", reply_markup=main_kb)
+        await state.clear()
         return
     
     await state.update_data(records=records)
-    await show_records_for_deletion(callback, records, category, state)
+    await show_records_for_deletion(callback, records, category)
 
 async def get_user_records(user_id: str, category: str):
     """Получить записи пользователя для указанной категории"""
@@ -79,7 +76,7 @@ async def get_user_records(user_id: str, category: str):
                     
                     # Для разных источников показываем разную информацию
                     if source == "🏢 Фирма":
-                        display_text = f"{date} - {source} - Чек: {repair_amount}₽ - Доход: {my_income}₽"
+                        display_text = f"{date} - {source} - Заявка {request_number} - Чек: {repair_amount}₽ - Доход: {my_income}₽ - Долг: {debt}₽"
                     else:
                         # Для Авито/Сарафанки показываем личный доход (вся сумма)
                         display_text = f"{date} - {source} - Доход: {my_income}₽"
@@ -173,7 +170,7 @@ async def get_user_records(user_id: str, category: str):
         print(f"Error getting user records: {e}")
         return []
 
-async def show_records_for_deletion(callback: CallbackQuery, records: list, category: str, state: FSMContext):
+async def show_records_for_deletion(callback: CallbackQuery, records: list, category: str):
     """Показать записи для удаления"""
     keyboard = InlineKeyboardBuilder()
     
@@ -196,12 +193,10 @@ async def show_records_for_deletion(callback: CallbackQuery, records: list, cate
             callback_data=f"select_record_{i}"
         ))
     
-    keyboard.add(InlineKeyboardButton(text="⬅️ Назад к категориям", callback_data="delete_back_to_categories"))
+    keyboard.add(InlineKeyboardButton(text="⬅️ Назад к категориям", callback_data="delete_back"))
     keyboard.adjust(1)
     
-    # Удаляем предыдущее сообщение и отправляем новое
-    await callback.message.delete()
-    await callback.message.answer(
+    await callback.message.edit_text(
         f"🗑️ Выбери запись для удаления ({category_names[category]}):\n\n"
         f"📋 Показано последних {len(records)} записей",
         reply_markup=keyboard.as_markup()
@@ -222,12 +217,10 @@ async def process_record_selection(callback: CallbackQuery, state: FSMContext):
         
         keyboard = InlineKeyboardBuilder()
         keyboard.add(InlineKeyboardButton(text="✅ Да, удалить", callback_data="confirm_delete"))
-        keyboard.add(InlineKeyboardButton(text="❌ Нет, отмена", callback_data="delete_back_to_records"))
+        keyboard.add(InlineKeyboardButton(text="❌ Нет, отмена", callback_data="delete_back"))
         keyboard.adjust(2)
         
-        # Удаляем предыдущее сообщение и отправляем новое
-        await callback.message.delete()
-        await callback.message.answer(
+        await callback.message.edit_text(
             f"⚠️ Ты уверен что хочешь удалить эту запись?\n\n"
             f"📄 {selected_record['display_text']}",
             reply_markup=keyboard.as_markup()
@@ -257,80 +250,43 @@ async def confirm_deletion(callback: CallbackQuery, state: FSMContext):
         # Удаляем строку
         sheet.delete_rows(selected_record['row_index'])
         
-        # Удаляем предыдущее сообщение и отправляем новое
-        await callback.message.delete()
-        await callback.message.answer(
-            f"✅ Запись успешно удалена!\n"
-            f"🗑️ {selected_record['display_text']}",
-            reply_markup=InlineKeyboardBuilder()
-                .add(InlineKeyboardButton(text="🗑️ Удалить ещё", callback_data="delete_more"))
-                .add(InlineKeyboardButton(text="🏠 Главное меню", callback_data="delete_main"))
-                .adjust(2)
-                .as_markup()
+        # Сообщение об успешном удалении и сразу в главное меню
+        await callback.message.edit_text(
+            f"✅ Запись успешно удалена!\n\n"
+            f"🗑️ {selected_record['display_text']}\n\n"
+            f"🏠 Возврат в главное меню",
+            reply_markup=None
         )
+        
+        # Отправляем главное меню
+        await callback.message.answer("Главное меню:", reply_markup=main_kb)
         
     except Exception as e:
-        await callback.message.delete()
-        await callback.message.answer(
-            f"❌ Ошибка при удалении записи: {str(e)}",
-            reply_markup=InlineKeyboardBuilder()
-                .add(InlineKeyboardButton(text="⬅️ Назад к записям", callback_data="delete_back_to_records"))
-                .as_markup()
+        await callback.message.edit_text(
+            f"❌ Ошибка при удалении записи: {str(e)}\n\n"
+            f"🏠 Возврат в главное меню",
+            reply_markup=None
         )
+        await callback.message.answer("Главное меню:", reply_markup=main_kb)
     
+    # Всегда очищаем состояние
+    await state.clear()
     await callback.answer()
 
-@router.callback_query(lambda c: c.data == 'delete_more')
-async def delete_more_records(callback: CallbackQuery, state: FSMContext):
-    """Удалить ещё - начинаем сначала"""
-    await callback.message.delete()
-    await delete_records_start(callback.message, state)
-    await callback.answer()
-
-@router.callback_query(lambda c: c.data == 'delete_back_to_records')
-async def back_to_records(callback: CallbackQuery, state: FSMContext):
-    """Вернуться к списку записей текущей категории"""
-    data = await state.get_data()
-    category = data.get('category')
-    user_id = str(callback.from_user.id)
-    
-    if category:
-        # Получаем актуальные записи (после удаления)
-        records = await get_user_records(user_id, category)
-        
-        if not records:
-            await callback.message.delete()
-            await callback.message.answer(
-                "❌ В этой категории нет записей для удаления",
-                reply_markup=InlineKeyboardBuilder()
-                    .add(InlineKeyboardButton(text="⬅️ Назад к категориям", callback_data="delete_back_to_categories"))
-                    .as_markup()
-            )
-        else:
-            await state.update_data(records=records)
-            await show_records_for_deletion(callback, records, category, state)
-    else:
-        await delete_records_start(callback.message, state)
-    
-    await callback.answer()
-
-@router.callback_query(lambda c: c.data == 'delete_back_to_categories')
+@router.callback_query(lambda c: c.data == 'delete_back')
 async def back_to_categories(callback: CallbackQuery, state: FSMContext):
     """Вернуться к выбору категории"""
-    await callback.message.delete()
     await delete_records_start(callback.message, state)
     await callback.answer()
 
 @router.callback_query(lambda c: c.data == 'delete_cancel')
 async def cancel_deletion(callback: CallbackQuery, state: FSMContext):
     """Отмена удаления - вернуться в главное меню"""
-    await back_to_main_menu(callback, state)
-
-@router.callback_query(lambda c: c.data == 'delete_main')
-async def back_to_main_menu(callback: CallbackQuery, state: FSMContext):
-    """Вернуться в главное меню"""
     await state.clear()
-    await callback.message.delete()
+    await callback.message.edit_text(
+        "❌ Удаление отменено\n\n🏠 Возврат в главное меню",
+        reply_markup=None
+    )
     await callback.message.answer("Главное меню:", reply_markup=main_kb)
     await callback.answer()
 
