@@ -128,10 +128,41 @@ async def generate_personal_report(message: Message):
         logger.error(f"Report error: {e}")
 
 # ========== ОТЧЕТ ФИРМЕ ==========
+# handlers/reports.py (обновляем функцию отчетов фирмы)
 @router.message(lambda m: m.text == "🏢 Отчет фирме")
 async def start_firm_report(message: Message, state: FSMContext):
     await state.set_state(FirmReportStates.period)
-    await message.answer("За какой период отчет для фирмы?", reply_markup=firm_report_kb)
+    
+    # Сразу показываем текущую ситуацию с долгами
+    incomes = sheet_income.get_all_values()[1:]
+    
+    unpaid_requests = []
+    total_debt = 0
+    firm_count = 0
+    
+    for row in incomes:
+        if len(row) >= 7 and row[1] == "🏢 Фирма":
+            try:
+                debt = float(row[5]) if row[5] else 0
+                if row[6] == "Не оплачено" and debt > 0:
+                    unpaid_requests.append({
+                        'date': row[0],
+                        'request_number': row[2],
+                        'debt': debt
+                    })
+                    total_debt += debt
+                firm_count += 1
+            except:
+                continue
+    
+    status_text = (
+        f"🏢 ТЕКУЩИЙ ДОЛГ: {total_debt:,.0f} ₽\n"
+        f"📋 Неоплаченных заявок: {len(unpaid_requests)}\n"
+        f"🔢 Всего заявок фирмы: {firm_count}\n\n"
+        f"Выбери период для отчета:"
+    )
+    
+    await message.answer(status_text, reply_markup=firm_report_kb)
 
 @router.message(FirmReportStates.period)
 async def generate_firm_report(message: Message, state: FSMContext):
@@ -140,19 +171,24 @@ async def generate_firm_report(message: Message, state: FSMContext):
         
     try:
         incomes = sheet_income.get_all_values()[1:]
-        tips_data = sheet_tips.get_all_values()[1:]
         
         today = datetime.date.today()
         
         if message.text == "🏢 Неделя фирмы":
-            start_date = today - datetime.timedelta(days=7)
-            period_text = "за неделю"
+            # ПОКАЗЫВАЕМ ТОЛЬКО НЕОПЛАЧЕННЫЕ ЗАЯВКИ ЗА ВЕСЬ ПЕРИОД
+            period_text = "неоплаченные"
+            show_only_unpaid = True
+            date_filter = None
         elif message.text == "🏢 Месяц фирмы":
             start_date = today - datetime.timedelta(days=30)
             period_text = "за месяц"
+            show_only_unpaid = False
+            date_filter = start_date
         else:  # Год фирмы
             start_date = today - datetime.timedelta(days=365)
-            period_text = "за год"
+            period_text = "за год" 
+            show_only_unpaid = False
+            date_filter = start_date
         
         # Расчеты для отчета фирме
         firm_repairs = 0
@@ -164,10 +200,21 @@ async def generate_firm_report(message: Message, state: FSMContext):
         firm_tips = 0
         
         for row in incomes:
-            if len(row) >= 6 and row[1] == "🏢 Фирма":  # только заявки фирмы
+            if len(row) >= 6 and row[1] == "🏢 Фирма":
                 try:
                     row_date = datetime.datetime.strptime(row[0], "%d.%m.%Y").date()
-                    if row_date >= start_date:
+                    
+                    # Проверяем фильтр по дате
+                    date_ok = True
+                    if date_filter and row_date < date_filter:
+                        date_ok = False
+                    
+                    # Проверяем фильтр по оплате
+                    payment_ok = True
+                    if show_only_unpaid:
+                        payment_ok = (len(row) >= 7 and row[6] == "Не оплачено")
+                    
+                    if date_ok and payment_ok:
                         repair_amount = float(row[3]) if row[3] else 0
                         debt = float(row[5]) if row[5] else 0
                         request_num = row[2] if len(row) > 2 else "?"
@@ -175,18 +222,25 @@ async def generate_firm_report(message: Message, state: FSMContext):
                         firm_repairs += repair_amount
                         firm_debt += debt
                         firm_count += 1
-                        firm_requests.append(f"{request_num} - {repair_amount:,.0f} ₽")
+                        status = row[6] if len(row) > 6 else "?"
+                        firm_requests.append(f"{request_num} - {repair_amount:,.0f} ₽ ({status})")
                 except:
                     continue
         
         # Считаем чаевые связанные с заявками фирмы
+        tips_data = sheet_tips.get_all_values()[1:]
         for row in tips_data:
             if len(row) >= 4:
                 try:
                     row_date = datetime.datetime.strptime(row[0], "%d.%m.%Y").date()
                     comment = row[3] if len(row) > 3 else ""
+                    
+                    date_ok = True
+                    if date_filter and row_date < date_filter:
+                        date_ok = False
+                    
                     # Если в комментарии есть упоминание фирмы или номера заявки
-                    if row_date >= start_date and ("Фирма" in comment or any(req.split(' - ')[0] in comment for req in firm_requests if ' - ' in req)):
+                    if date_ok and ("Фирма" in comment or any(req.split(' - ')[0] in comment for req in firm_requests if ' - ' in req)):
                         firm_tips += float(row[2]) if row[2] else 0
                 except:
                     continue
@@ -194,23 +248,40 @@ async def generate_firm_report(message: Message, state: FSMContext):
         my_income_from_firm = firm_repairs - firm_debt
         total_income_with_tips = my_income_from_firm + firm_tips
         
-        # Формируем список заявок (максимум 10 штук)
-        requests_text = "\n".join(firm_requests[:10])
-        if len(firm_requests) > 10:
-            requests_text += f"\n... и еще {len(firm_requests) - 10} заявок"
+        # Формируем список заявок (максимум 15 штук)
+        requests_text = "\n".join(firm_requests[:15])
+        if len(firm_requests) > 15:
+            requests_text += f"\n... и еще {len(firm_requests) - 15} заявок"
         
         response = (
-            f"🏢 ОТЧЕТ ФИРМЕ {period_text.upper()}:\n"
-            f"🔧 Заявок выполнено: {firm_count}\n"
+            f"🏢 ОТЧЕТ ФИРМЕ ({period_text}):\n"
+            f"🔧 Заявок: {firm_count}\n"
             f"💵 Общая сумма: {firm_repairs:,.0f} ₽\n"
-            f"🏢 К оплате фирме: {firm_debt:,.0f} ₽\n"
+            f"🏢 Долг фирме: {firm_debt:,.0f} ₽\n"
             f"💸 Мой доход с фирмы: {my_income_from_firm:,.0f} ₽\n"
             f"💝 Чаевые с заявок: {firm_tips:,.0f} ₽\n"
             f"🎯 Итого с чаевыми: {total_income_with_tips:,.0f} ₽\n\n"
-            f"📋 Заявки:\n{requests_text if firm_requests else 'Нет заявок'}"
         )
         
-        await message.answer(response, reply_markup=main_kb)
+        if firm_requests:
+            response += f"📋 Заявки:\n{requests_text}"
+        else:
+            response += "📋 Нет заявок по выбранным критериям"
+        
+        # Добавляем кнопку для отметки оплаты если есть неоплаченные
+        if show_only_unpaid and firm_debt > 0:
+            from aiogram.utils.keyboard import ReplyKeyboardBuilder
+            from aiogram.types import KeyboardButton
+            
+            builder = ReplyKeyboardBuilder()
+            builder.add(KeyboardButton(text="💳 Отметить оплату фирме"))
+            builder.add(KeyboardButton(text="⬅️ Назад"))
+            builder.adjust(1)
+            
+            await message.answer(response, reply_markup=builder.as_markup(resize_keyboard=True))
+        else:
+            await message.answer(response, reply_markup=main_kb)
+        
         await state.clear()
         
     except Exception as e:
@@ -228,3 +299,4 @@ async def back_to_main(message: Message, state: FSMContext):
 async def handle_report_button(message: Message):
 
     await show_reports(message)
+
