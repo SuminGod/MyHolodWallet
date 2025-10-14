@@ -10,7 +10,7 @@ def get_main_kb():
     builder.add(KeyboardButton(text="📊 Отчет"))
     builder.add(KeyboardButton(text="🎯 Ставки"))
     builder.add(KeyboardButton(text="💳 Отметить оплату фирме")) 
-    builder.adjust(2, 2, 1)
+    builder.adjust(2, 2, 2)
     return builder.as_markup(resize_keyboard=True)
 
 def get_income_kb():
@@ -95,4 +95,5 @@ bets_report_kb = get_bets_report_kb()
 
 
 # Обновляем список клавиатур в конце файла
+
 
