@@ -26,11 +26,16 @@ else:
 sheet_income = gc.open(GSHEET_NAME).worksheet("Доходы")
 sheet_expense = gc.open(GSHEET_NAME).worksheet("Расходы")
 sheet_tips = gc.open(GSHEET_NAME).worksheet("Чаевые")
+sheet_bets = gc.open(GSHEET_NAME).worksheet("Ставки")
 
 class FirmReportStates(StatesGroup):
     period = State()
 
 # ========== ОТЧЕТЫ ==========
+@router.message(lambda m: m.text == "📊 Отчет")
+async def show_reports(message: Message):
+    await message.answer("Какой отчет нужен?", reply_markup=report_kb)
+
 @router.message(lambda m: m.text in ["📅 Сегодня", "📆 Неделя", "🗓️ Месяц", "📈 Год"])
 async def generate_personal_report(message: Message):
     try:
@@ -147,7 +152,6 @@ async def generate_personal_report(message: Message):
         logger.error(f"Report error: {e}")
 
 # ========== ОТЧЕТ ФИРМЕ ==========
-# handlers/reports.py (обновляем функцию отчетов фирмы)
 @router.message(lambda m: m.text == "🏢 Отчет фирме")
 async def start_firm_report(message: Message, state: FSMContext):
     await state.set_state(FirmReportStates.period)
@@ -163,7 +167,7 @@ async def start_firm_report(message: Message, state: FSMContext):
         if len(row) >= 7 and row[1] == "🏢 Фирма":
             try:
                 debt = float(row[5]) if row[5] else 0
-                if row[6] == "Не оплачено" and debt > 0:
+                if len(row) >= 7 and row[6] == "Не оплачено" and debt > 0:
                     unpaid_requests.append({
                         'date': row[0],
                         'request_number': row[2],
@@ -287,36 +291,16 @@ async def generate_firm_report(message: Message, state: FSMContext):
         else:
             response += "📋 Нет заявок по выбранным критериям"
         
-        # Добавляем кнопку для отметки оплаты если есть неоплаченные
-        if show_only_unpaid and firm_debt > 0:
-            from aiogram.utils.keyboard import ReplyKeyboardBuilder
-            from aiogram.types import KeyboardButton
-            
-            builder = ReplyKeyboardBuilder()
-            builder.add(KeyboardButton(text="💳 Отметить оплату фирме"))
-            builder.add(KeyboardButton(text="⬅️ Назад"))
-            builder.adjust(1)
-            
-            await message.answer(response, reply_markup=builder.as_markup(resize_keyboard=True))
-        else:
-            await message.answer(response, reply_markup=main_kb)
-        
+        await message.answer(response, reply_markup=main_kb)
         await state.clear()
         
     except Exception as e:
         await message.answer("❌ Ошибка формирования отчета фирме")
         logger.error(f"Firm report error: {e}")
-        # ОБРАБОТКА ЛЮБЫХ НЕОБРАБОТАННЫХ СООБЩЕНИЙ
-    # Обработка кнопки "Назад" из любого состояния
+
+# Обработка кнопки "Назад" из любого состояния
 @router.message(lambda m: m.text == "⬅️ Назад")
 async def back_to_main(message: Message, state: FSMContext):
     await state.clear()
     from keyboards import main_kb
     await message.answer("Главное меню:", reply_markup=main_kb)
-    # Обработчик для кнопки отчетов
-@router.message(lambda m: m.text == "📊 Отчет")
-async def handle_report_button(message: Message):
-
-    await show_reports(message)
-
-
