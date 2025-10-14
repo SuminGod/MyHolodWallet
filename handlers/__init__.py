@@ -6,7 +6,7 @@ from .reports import router as reports_router
 from .bets import router as bets_router
 from .firm_payment import router as firm_payment_router
 from .admin import router as admin_router
-from .delete_records import router as delete_router  # ДОБАВЬ ЭТУ СТРОЧКУ
+from .delete_records import router as delete_router
 
 __all__ = [
     'base_router', 
@@ -16,5 +16,5 @@ __all__ = [
     'bets_router', 
     'firm_payment_router',
     'admin_router',
-    'delete_router'  # ДОБАВЬ ЭТУ СТРОЧКУ
+    'delete_router'
 ]
