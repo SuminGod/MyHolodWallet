@@ -9,7 +9,7 @@ def get_main_kb():
     builder.add(KeyboardButton(text="📤 Добавить расход"))
     builder.add(KeyboardButton(text="📊 Отчет"))
     builder.add(KeyboardButton(text="🎯 Ставки"))
-    builder.add(KeyboardButton(text="💳 Отметить оплату фирме"))  # НОВАЯ КНОПКА
+    builder.add(KeyboardButton(text="💳 Отметить оплату фирме"))
     builder.adjust(2, 2, 2)
     return builder.as_markup(resize_keyboard=True)
 
@@ -46,7 +46,7 @@ def get_report_kb():
     builder = ReplyKeyboardBuilder()
     builder.add(KeyboardButton(text="📅 Сегодня"))
     builder.add(KeyboardButton(text="📆 Неделя"))
-    builder.add(KeyboardButton(text="🗓️ Месяц"))
+    builder.add(KeyboardButton(text="🗓️ Месяц"))  # Теперь ведет к выбору конкретного месяца
     builder.add(KeyboardButton(text="📈 Год"))
     builder.add(KeyboardButton(text="🏢 Отчет фирме"))
     builder.add(KeyboardButton(text="⬅️ Назад"))
@@ -61,6 +61,7 @@ def get_firm_report_kb():
     builder.add(KeyboardButton(text="⬅️ Назад"))
     builder.adjust(2, 2)
     return builder.as_markup(resize_keyboard=True)
+
 def get_bets_kb():
     builder = ReplyKeyboardBuilder()
     builder.add(KeyboardButton(text="💰 Пополнение"))
@@ -89,12 +90,3 @@ report_kb = get_report_kb()
 firm_report_kb = get_firm_report_kb()
 bets_kb = get_bets_kb()
 bets_report_kb = get_bets_report_kb()
-
-
-# Добавляем в существующие клавиатуры
-
-
-# Обновляем список клавиатур в конце файла
-
-
-
