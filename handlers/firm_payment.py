@@ -4,24 +4,14 @@ from aiogram import Router
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-import gspread
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from aiogram.types import KeyboardButton
-from utils.user_manager import sheets_manager
-
+import gspread
 
 from keyboards import main_kb
-from config import GSHEET_NAME, GSHEET_CREDS
+from utils.user_manager import sheets_manager
 
 router = Router()
-
-# Подключение к Google Sheets
-if GSHEET_CREDS:
-    gc = gspread.service_account_from_dict(GSHEET_CREDS)
-else:
-    gc = gspread.service_account(filename='creds.json')
-
-sheet_income = gc.open(GSHEET_NAME).worksheet("Доходы")
 
 class PaymentStates(StatesGroup):
     confirm = State()
@@ -38,21 +28,26 @@ def confirm_kb():
 async def start_payment_process(message: Message, state: FSMContext):
     """Начало процесса отметки оплаты"""
     
-    # Получаем все неоплаченные заявки фирмы
-    incomes = sheet_income.get_all_values()[1:]  # пропускаем заголовок
+    user_id = str(message.from_user.id)
+    
+    # Получаем все неоплаченные заявки фирмы для этого пользователя
+    incomes = sheets_manager.get_user_data(sheets_manager.sheet_income, user_id)
     
     unpaid_requests = []
     total_debt = 0
     
-    for i, row in enumerate(incomes, start=2):  # start=2 потому что пропустили заголовок
-        if len(row) >= 7 and row[1] == "🏢 Фирма" and row[6] == "Не оплачено":
+    # Ищем строки для обновления
+    all_incomes = sheets_manager.get_all_data(sheets_manager.sheet_income)
+    
+    for i, row in enumerate(all_incomes, start=1):
+        if len(row) >= 8 and row[0] == user_id and row[2] == "🏢 Фирма" and row[7] == "Не оплачено":
             try:
-                debt = float(row[5]) if row[5] else 0
+                debt = float(row[6]) if row[6] else 0
                 if debt > 0:
                     unpaid_requests.append({
                         'row_index': i,
-                        'date': row[0],
-                        'request_number': row[2],
+                        'date': row[1],
+                        'request_number': row[3],
                         'debt': debt
                     })
                     total_debt += debt
@@ -99,7 +94,7 @@ async def confirm_payment(message: Message, state: FSMContext):
         updated_count = 0
         for request in unpaid_requests:
             try:
-                sheet_income.update_cell(request['row_index'], 7, "Оплачено")  # 7-й столбец - статус
+                sheets_manager.sheet_income.update_cell(request['row_index'], 8, "Оплачено")  # 8-й столбец - статус
                 updated_count += 1
             except Exception as e:
                 print(f"Error updating row {request['row_index']}: {e}")
@@ -115,7 +110,7 @@ async def confirm_payment(message: Message, state: FSMContext):
     else:
         await message.answer("Используй кнопки для подтверждения")
 
-# Обработка кнопки "Назад" из любого состояния
+# Обработка кнопки "Назад"
 @router.message(lambda m: m.text == "⬅️ Назад")
 async def back_to_main(message: Message, state: FSMContext):
     await state.clear()
