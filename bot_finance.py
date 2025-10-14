@@ -11,7 +11,8 @@ from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import TOKEN
-from handlers import base_router, income_router, expense_router, reports_router, bets_router, firm_payment_router
+from handlers import base_router, income_router, expense_router, reports_router, bets_router
+
 # =======================
 # Настройка логирования
 # =======================
@@ -21,35 +22,37 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# =======================
-# Настройка бота
-# =======================
-bot = Bot(token=TOKEN)
-dp = Dispatcher(storage=MemoryStorage())
-
-# =======================
-# Регистрация роутеров
-# =======================
-dp.include_router(income_router)
-dp.include_router(expense_router)
-dp.include_router(reports_router)
-dp.include_router(bets_router)
-dp.include_router(base_router)
-dp.include_router(firm_payment_router)
-
-# =======================
-# Запуск бота
-# =======================
 async def main():
-    while True:
-        try:
-            logger.info("🚀 Бот запускается...")
-            await dp.start_polling(bot)
-        except Exception as e:
-            logger.error(f"❌ Ошибка: {e}")
-            logger.info("🔄 Перезапуск через 30 секунд...")
-            await asyncio.sleep(30)
+    # =======================
+    # Настройка бота
+    # =======================
+    try:
+        logger.info("🚀 Инициализация бота...")
+        bot = Bot(token=TOKEN)
+        dp = Dispatcher(storage=MemoryStorage())
+        
+        # =======================
+        # Регистрация роутеров
+        # =======================
+        dp.include_router(income_router)
+        dp.include_router(expense_router)
+        dp.include_router(reports_router)
+        dp.include_router(bets_router)
+        dp.include_router(base_router)
+        
+        logger.info("✅ Все роутеры зарегистрированы")
+        logger.info("🤖 Бот готов к работе")
+        
+        # =======================
+        # Запуск бота
+        # =======================
+        await dp.start_polling(bot)
+        
+    except Exception as e:
+        logger.error(f"❌ Критическая ошибка при инициализации: {e}")
+        logger.info("🔄 Перезапуск через 30 секунд...")
+        await asyncio.sleep(30)
+        await main()
 
 if __name__ == "__main__":
     asyncio.run(main())
-
