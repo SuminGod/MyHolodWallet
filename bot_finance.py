@@ -10,8 +10,6 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 
-from config import TOKEN
-from handlers import base_router, income_router, expense_router, reports_router, bets_router, firm_payment_router, admin_router, delete_router
 # =======================
 # Настройка логирования
 # =======================
@@ -26,6 +24,9 @@ async def main():
     # Настройка бота
     # =======================
     try:
+        from config import TOKEN
+        from handlers import base_router, income_router, expense_router, reports_router, bets_router, firm_payment_router, admin_router, delete_router
+        
         logger.info("🚀 Инициализация бота...")
         bot = Bot(token=TOKEN)
         dp = Dispatcher(storage=MemoryStorage())
@@ -33,14 +34,19 @@ async def main():
         # =======================
         # Регистрация роутеров
         # =======================
-        dp.include_router(admin_router) 
-        dp.include_router(income_router)
-        dp.include_router(expense_router)
-        dp.include_router(reports_router)
-        dp.include_router(bets_router)
-        dp.include_router(firm_payment_router)  # ДОБАВЬ ЭТУ СТРОЧКУ
-        dp.include_router(base_router)
-        dp.include_router(delete_router) 
+        routers = [
+            admin_router,
+            income_router,
+            expense_router,
+            reports_router,
+            bets_router,
+            firm_payment_router,
+            delete_router,  # ДОБАВЬ ЭТУ СТРОЧКУ
+            base_router
+        ]
+        
+        for router in routers:
+            dp.include_router(router)
         
         logger.info("✅ Все роутеры зарегистрированы")
         logger.info("🤖 Бот готов к работе")
@@ -51,12 +57,10 @@ async def main():
         await dp.start_polling(bot)
         
     except Exception as e:
-        logger.error(f"❌ Критическая ошибка при инициализации: {e}")
+        logger.error(f"❌ Критическая ошибка: {e}")
         logger.info("🔄 Перезапуск через 30 секунд...")
         await asyncio.sleep(30)
         await main()
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-
