@@ -4,26 +4,12 @@ from aiogram import Router
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-import gspread
 from utils.cancel_handler import cancel_handler
 from utils.user_manager import sheets_manager
 
-
 from keyboards import main_kb, expense_kb
-from config import GSHEET_NAME, GSHEET_CREDS_JSON
 
 router = Router()
-
-# Подключение к Google Sheets
-from config import GSHEET_CREDS
-import gspread
-
-if GSHEET_CREDS:
-    gc = gspread.service_account_from_dict(GSHEET_CREDS)
-else:
-    gc = gspread.service_account(filename='creds.json')
-
-sheet_expense = gc.open(GSHEET_NAME).worksheet("Расходы")
 
 class ExpenseStates(StatesGroup):
     category = State()
@@ -47,30 +33,24 @@ async def process_expense_category(message: Message, state: FSMContext):
 @router.message(ExpenseStates.amount)
 async def process_expense_amount(message: Message, state: FSMContext):
     try:
+        user_id = str(message.from_user.id)
+        
         data = await state.get_data()
         category = data["category"]
         amount = float(message.text.replace(',', '.'))
         
         today = datetime.date.today().strftime("%d.%m.%Y")
         values = [today, category, amount, ""]
-        sheet_expense.append_row(values)
+        sheets_manager.append_user_row(sheets_manager.sheet_expense, user_id, values)
         
         await message.answer(f"✅ Расход добавлен: {amount} ₽", reply_markup=main_kb)
         await state.clear()
         
     except ValueError:
         await message.answer("❌ Введи нормальную сумму:")
-        # ОБРАБОТКА ЛЮБЫХ НЕОБРАБОТАННЫХ СООБЩЕНИЙ
 
-    # Обработка кнопки "Назад" из любого состояния
+# Обработка кнопки "Назад"
 @router.message(lambda m: m.text == "⬅️ Назад")
 async def back_to_main(message: Message, state: FSMContext):
     await state.clear()
-    from keyboards import main_kb
     await message.answer("Главное меню:", reply_markup=main_kb)
-    # Обработчик для кнопки добавления расхода
-@router.message(lambda m: m.text == "📤 Добавить расход")
-async def handle_expense_button(message: Message, state: FSMContext):
-
-    await add_expense_start(message, state)
-
