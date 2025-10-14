@@ -6,6 +6,8 @@ from aiogram.fsm.state import StatesGroup, State
 import gspread
 from gspread.exceptions import APIError
 from utils.cancel_handler import cancel_handler
+from utils.user_manager import sheets_manager
+
 
 from keyboards import main_kb, income_kb, tips_kb
 from config import GSHEET_NAME, GSHEET_CREDS_JSON
@@ -208,3 +210,4 @@ async def handle_income_button(message: Message, state: FSMContext):
 @router.message(lambda m: m.text == "💰 Чаевые")
 async def handle_tips_button(message: Message, state: FSMContext):
     await add_tips_start(message, state)
+
