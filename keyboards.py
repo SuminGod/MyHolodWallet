@@ -10,7 +10,8 @@ def get_main_kb():
     builder.add(KeyboardButton(text="📊 Отчет"))
     builder.add(KeyboardButton(text="🎯 Ставки"))
     builder.add(KeyboardButton(text="💳 Отметить оплату фирме"))
-    builder.adjust(2, 2, 2)
+     builder.add(KeyboardButton(text="🗑️ Удалить записи"))  # НОВАЯ КНОПКА
+    builder.adjust(2, 2, 2, 1)
     return builder.as_markup(resize_keyboard=True)
 
 def get_income_kb():
@@ -90,3 +91,4 @@ report_kb = get_report_kb()
 firm_report_kb = get_firm_report_kb()
 bets_kb = get_bets_kb()
 bets_report_kb = get_bets_report_kb()
+
