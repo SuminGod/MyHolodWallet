@@ -1,11 +1,10 @@
+# utils/user_manager.py
 import gspread
 from config import GSHEET_CREDS, GSHEET_NAME
 
-# Белый список пользователей (добавь сюда ID своих пользователей)
+# Белый список пользователей
 ALLOWED_USERS = [
-    "129077607",           # Замени на свой Telegram ID
-    "USER_ID_ДРУГА",          # Замени на ID друга
-    # Можно добавить других пользователей
+    "129077607",  # Замени на свой ID
 ]
 
 class UserSheetsManager:
@@ -16,34 +15,35 @@ class UserSheetsManager:
             self.gc = gspread.service_account(filename='creds.json')
         
         self.workbook = self.gc.open(GSHEET_NAME)
+        
+        # Инициализируем листы один раз
+        self.sheet_income = self.workbook.worksheet("Доходы")
+        self.sheet_expense = self.workbook.worksheet("Расходы") 
+        self.sheet_tips = self.workbook.worksheet("Чаевые")
+        self.sheet_bets = self.workbook.worksheet("Ставки")
     
     def is_user_allowed(self, user_id: str) -> bool:
-        """Проверить, есть ли пользователь в белом списке"""
         return str(user_id) in ALLOWED_USERS
     
-    def get_sheet(self, user_id: str, sheet_type: str):
-        """Получить лист для конкретного пользователя"""
-        if not self.is_user_allowed(user_id):
-            raise PermissionError("Пользователь не имеет доступа к боту")
+    def get_user_data(self, sheet, user_id: str):
+        """Получить данные только для конкретного пользователя"""
+        all_data = sheet.get_all_values()
+        if not all_data:
+            return []
         
-        sheet_name = f"user_{user_id}_{sheet_type}"
-        try:
-            return self.workbook.worksheet(sheet_name)
-        except gspread.exceptions.WorksheetNotFound:
-            # Создаем новый лист с заголовками
-            worksheet = self.workbook.add_worksheet(sheet_name, 1000, 20)
-            
-            # Устанавливаем заголовки в зависимости от типа
-            if sheet_type == "income":
-                worksheet.append_row(["Дата", "Источник", "№ заявки", "Сумма чека", "Мой доход", "Долг фирме", "Статус оплаты"])
-            elif sheet_type == "expense":
-                worksheet.append_row(["Дата", "Категория", "Сумма", "Комментарий"])
-            elif sheet_type == "tips":
-                worksheet.append_row(["Дата", "Тип", "Сумма", "Комментарий"])
-            elif sheet_type == "bets":
-                worksheet.append_row(["Дата", "Операция", "Сумма"])
-            
-            return worksheet
+        headers = all_data[0]
+        user_data = []
+        
+        for row in all_data[1:]:
+            if len(row) > 0 and row[0] == user_id:  # user_id в первом столбце
+                user_data.append(row)
+        
+        return user_data
+    
+    def append_user_row(self, sheet, user_id: str, values: list):
+        """Добавить строку с user_id"""
+        row_data = [user_id] + values
+        sheet.append_row(row_data)
 
 # Глобальный менеджер
 sheets_manager = UserSheetsManager()
