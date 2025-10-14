@@ -1,9 +1,12 @@
+# handlers/firm_payment.py
 import datetime
 from aiogram import Router
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 import gspread
+from aiogram.utils.keyboard import ReplyKeyboardBuilder
+from aiogram.types import KeyboardButton
 
 from keyboards import main_kb
 from config import GSHEET_NAME, GSHEET_CREDS
@@ -20,6 +23,14 @@ sheet_income = gc.open(GSHEET_NAME).worksheet("Доходы")
 
 class PaymentStates(StatesGroup):
     confirm = State()
+
+def confirm_kb():
+    builder = ReplyKeyboardBuilder()
+    builder.add(KeyboardButton(text="✅ Подтвердить оплату"))
+    builder.add(KeyboardButton(text="❌ Отмена"))
+    builder.add(KeyboardButton(text="⬅️ Назад"))
+    builder.adjust(2, 1)
+    return builder.as_markup(resize_keyboard=True)
 
 @router.message(lambda m: m.text == "💳 Отметить оплату фирме")
 async def start_payment_process(message: Message, state: FSMContext):
@@ -72,7 +83,7 @@ async def start_payment_process(message: Message, state: FSMContext):
 
 @router.message(PaymentStates.confirm)
 async def confirm_payment(message: Message, state: FSMContext):
-    if message.text == "❌ Отмена":
+    if message.text == "❌ Отмена" or message.text == "⬅️ Назад":
         await state.clear()
         await message.answer("Отмена оплаты", reply_markup=main_kb)
         return
@@ -102,13 +113,8 @@ async def confirm_payment(message: Message, state: FSMContext):
     else:
         await message.answer("Используй кнопки для подтверждения")
 
-def confirm_kb():
-    from aiogram.utils.keyboard import ReplyKeyboardBuilder
-    from aiogram.types import KeyboardButton
-    
-    builder = ReplyKeyboardBuilder()
-    builder.add(KeyboardButton(text="✅ Подтвердить оплату"))
-    builder.add(KeyboardButton(text="❌ Отмена"))
-    builder.add(KeyboardButton(text="⬅️ Назад"))
-    builder.adjust(2, 1)
-    return builder.as_markup(resize_keyboard=True)
+# Обработка кнопки "Назад" из любого состояния
+@router.message(lambda m: m.text == "⬅️ Назад")
+async def back_to_main(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Главное меню:", reply_markup=main_kb)
