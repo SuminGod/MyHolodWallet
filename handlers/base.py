@@ -29,4 +29,3 @@ async def check_access_middleware(message: Message):
     if not sheets_manager.is_user_allowed(user_id):
         await message.answer("❌ Доступ запрещен. Обратись к администратору.")
         return
-    # Если доступ есть, сообщение продолжит обработку в других роутерах
