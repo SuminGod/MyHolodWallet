@@ -1,4 +1,3 @@
-# handlers/income.py
 import datetime
 from aiogram import Router
 from aiogram.types import Message
@@ -116,8 +115,10 @@ async def process_tips(message: Message, state: FSMContext):
         
         today = datetime.date.today().strftime("%d.%m.%Y")
         
-        # Записываем основной доход (БЕЗ чаевых в этой таблице)
-        values = [today, source, request_number, repair_amount, my_income, debt_to_firm]
+        # Записываем основной доход с статусом оплаты
+        # Новый формат: [Дата, Источник, № заявки, Сумма чека, Мой доход, Долг фирме, Статус оплаты]
+        payment_status = "Не оплачено" if source == "🏢 Фирма" and debt_to_firm > 0 else "Нет долга"
+        values = [today, source, request_number, repair_amount, my_income, debt_to_firm, payment_status]
         sheet_income.append_row(values)
         
         # Если есть чаевые - записываем их ОТДЕЛЬНО
@@ -134,6 +135,7 @@ async def process_tips(message: Message, state: FSMContext):
             response += f"💵 Сумма чека: {repair_amount} ₽\n"
             response += f"💸 Твой доход: {my_income} ₽\n"
             response += f"🏢 Долг фирме: {debt_to_firm} ₽\n"
+            response += f"📋 Статус: {payment_status}\n"
         else:
             response += f"💸 Твой доход: {my_income} ₽\n"
             
@@ -190,21 +192,19 @@ async def process_tips_comment(message: Message, state: FSMContext):
         
     except Exception as e:
         await message.answer("❌ Ошибка при добавлении чаевых")
-        # ОБРАБОТКА ЛЮБЫХ НЕОБРАБОТАННЫХ СООБЩЕНИЙ
-        
-    # Обработка кнопки "Назад" из любого состояния
+
+# Обработка кнопки "Назад" из любого состояния
 @router.message(lambda m: m.text == "⬅️ Назад")
 async def back_to_main(message: Message, state: FSMContext):
     await state.clear()
     from keyboards import main_kb
     await message.answer("Главное меню:", reply_markup=main_kb)
     
-    # Обработчики для кнопок главного меню в роутере доходов
+# Обработчики для кнопок главного меню в роутере доходов
 @router.message(lambda m: m.text == "💵 Добавить доход")
 async def handle_income_button(message: Message, state: FSMContext):
     await add_income_start(message, state)
 
 @router.message(lambda m: m.text == "💰 Чаевые")
 async def handle_tips_button(message: Message, state: FSMContext):
-
     await add_tips_start(message, state)
