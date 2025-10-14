@@ -7,6 +7,8 @@ from aiogram.fsm.state import StatesGroup, State
 import gspread
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from aiogram.types import KeyboardButton
+from utils.user_manager import sheets_manager
+
 
 from keyboards import main_kb
 from config import GSHEET_NAME, GSHEET_CREDS
