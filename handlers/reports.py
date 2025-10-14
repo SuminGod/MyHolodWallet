@@ -5,32 +5,15 @@ from aiogram import Router
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-import gspread
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from aiogram.types import KeyboardButton
 from utils.cancel_handler import cancel_handler
 from utils.user_manager import sheets_manager
 
-
 from keyboards import main_kb, report_kb, firm_report_kb
-from config import GSHEET_NAME, GSHEET_CREDS_JSON
 
 router = Router()
 logger = logging.getLogger(__name__)
-
-# Подключение к Google Sheets
-from config import GSHEET_CREDS
-import gspread
-
-if GSHEET_CREDS:
-    gc = gspread.service_account_from_dict(GSHEET_CREDS)
-else:
-    gc = gspread.service_account(filename='creds.json')
-
-sheet_income = gc.open(GSHEET_NAME).worksheet("Доходы")
-sheet_expense = gc.open(GSHEET_NAME).worksheet("Расходы")
-sheet_tips = gc.open(GSHEET_NAME).worksheet("Чаевые")
-sheet_bets = gc.open(GSHEET_NAME).worksheet("Ставки")
 
 class FirmReportStates(StatesGroup):
     period = State()
@@ -151,10 +134,13 @@ async def generate_period_report(message: Message, period_type: str):
 async def generate_report_by_dates(message: Message, start_date: datetime.date, end_date: datetime.date, period_text: str):
     """Общая функция генерации отчета по датам"""
     try:
-        incomes = sheet_income.get_all_values()[1:]
-        expenses = sheet_expense.get_all_values()[1:]
-        tips_data = sheet_tips.get_all_values()[1:]
-        bets_data = sheet_bets.get_all_values()[1:] if sheet_bets else []
+        user_id = str(message.from_user.id)
+        
+        # Получаем данные только для этого пользователя
+        incomes = sheets_manager.get_user_data(sheets_manager.sheet_income, user_id)
+        expenses = sheets_manager.get_user_data(sheets_manager.sheet_expense, user_id)
+        tips_data = sheets_manager.get_user_data(sheets_manager.sheet_tips, user_id)
+        bets_data = sheets_manager.get_user_data(sheets_manager.sheet_bets, user_id)
         
         # Расчеты
         total_my_income = 0
@@ -165,41 +151,42 @@ async def generate_report_by_dates(message: Message, start_date: datetime.date, 
         avito_count = 0
         sarafanka_count = 0
         
-        # Основные доходы
+        # Основные доходы (пропускаем первый элемент - user_id)
         for row in incomes:
-            if len(row) >= 5:
+            if len(row) >= 7:  # user_id + 6 полей
                 try:
-                    row_date = datetime.datetime.strptime(row[0], "%d.%m.%Y").date()
+                    row_date = datetime.datetime.strptime(row[1], "%d.%m.%Y").date()  # row[1] - дата
                     if start_date <= row_date <= end_date:
-                        my_income = float(row[4]) if row[4] else 0
+                        my_income = float(row[5]) if row[5] else 0  # row[5] - мой доход
                         total_my_income += my_income
                         
-                        if row[1] == "🏢 Фирма":
+                        source = row[2]  # row[2] - источник
+                        if source == "🏢 Фирма":
                             firm_count += 1
-                        elif row[1] == "📱 Авито":
+                        elif source == "📱 Авито":
                             avito_count += 1
-                        elif row[1] == "👥 Сарафанка":
+                        elif source == "👥 Сарафанка":
                             sarafanka_count += 1
                 except:
                     continue
         
         # Чаевые
         for row in tips_data:
-            if len(row) >= 3:
+            if len(row) >= 4:  # user_id + 3 поля
                 try:
-                    row_date = datetime.datetime.strptime(row[0], "%d.%m.%Y").date()
+                    row_date = datetime.datetime.strptime(row[1], "%d.%m.%Y").date()  # row[1] - дата
                     if start_date <= row_date <= end_date:
-                        total_tips += float(row[2]) if row[2] else 0
+                        total_tips += float(row[3]) if row[3] else 0  # row[3] - сумма
                 except:
                     continue
         
         # Расходы
         for row in expenses:
-            if len(row) >= 3:
+            if len(row) >= 4:  # user_id + 3 поля
                 try:
-                    row_date = datetime.datetime.strptime(row[0], "%d.%m.%Y").date()
+                    row_date = datetime.datetime.strptime(row[1], "%d.%m.%Y").date()  # row[1] - дата
                     if start_date <= row_date <= end_date:
-                        total_expenses += float(row[2]) if row[2] else 0
+                        total_expenses += float(row[3]) if row[3] else 0  # row[3] - сумма
                 except:
                     continue
         
@@ -207,12 +194,12 @@ async def generate_report_by_dates(message: Message, start_date: datetime.date, 
         bets_deposits = 0
         bets_withdrawals = 0
         for row in bets_data:
-            if len(row) >= 3:
+            if len(row) >= 4:  # user_id + 3 поля
                 try:
-                    row_date = datetime.datetime.strptime(row[0], "%d.%m.%Y").date()
+                    row_date = datetime.datetime.strptime(row[1], "%d.%m.%Y").date()  # row[1] - дата
                     if start_date <= row_date <= end_date:
-                        operation_type = row[1]
-                        amount = float(row[2]) if row[2] else 0
+                        operation_type = row[2]  # row[2] - операция
+                        amount = float(row[3]) if row[3] else 0  # row[3] - сумма
                         
                         if operation_type == "Пополнение":
                             bets_deposits += amount
@@ -261,20 +248,21 @@ async def start_firm_report(message: Message, state: FSMContext):
     await state.set_state(FirmReportStates.period)
     
     # Сразу показываем текущую ситуацию с долгами
-    incomes = sheet_income.get_all_values()[1:]
+    user_id = str(message.from_user.id)
+    incomes = sheets_manager.get_user_data(sheets_manager.sheet_income, user_id)
     
     unpaid_requests = []
     total_debt = 0
     firm_count = 0
     
     for row in incomes:
-        if len(row) >= 7 and row[1] == "🏢 Фирма":
+        if len(row) >= 8 and row[2] == "🏢 Фирма":  # row[2] - источник
             try:
-                debt = float(row[5]) if row[5] else 0
-                if len(row) >= 7 and row[6] == "Не оплачено" and debt > 0:
+                debt = float(row[6]) if row[6] else 0  # row[6] - долг фирме
+                if len(row) >= 8 and row[7] == "Не оплачено" and debt > 0:  # row[7] - статус
                     unpaid_requests.append({
-                        'date': row[0],
-                        'request_number': row[2],
+                        'date': row[1],  # row[1] - дата
+                        'request_number': row[3],  # row[3] - номер заявки
                         'debt': debt
                     })
                     total_debt += debt
@@ -297,7 +285,8 @@ async def generate_firm_report(message: Message, state: FSMContext):
         return
         
     try:
-        incomes = sheet_income.get_all_values()[1:]
+        user_id = str(message.from_user.id)
+        incomes = sheets_manager.get_user_data(sheets_manager.sheet_income, user_id)
         
         today = datetime.date.today()
         
@@ -327,9 +316,9 @@ async def generate_firm_report(message: Message, state: FSMContext):
         firm_tips = 0
         
         for row in incomes:
-            if len(row) >= 6 and row[1] == "🏢 Фирма":
+            if len(row) >= 7 and row[2] == "🏢 Фирма":  # row[2] - источник
                 try:
-                    row_date = datetime.datetime.strptime(row[0], "%d.%m.%Y").date()
+                    row_date = datetime.datetime.strptime(row[1], "%d.%m.%Y").date()  # row[1] - дата
                     
                     # Проверяем фильтр по дате
                     date_ok = True
@@ -339,28 +328,28 @@ async def generate_firm_report(message: Message, state: FSMContext):
                     # Проверяем фильтр по оплате
                     payment_ok = True
                     if show_only_unpaid:
-                        payment_ok = (len(row) >= 7 and row[6] == "Не оплачено")
+                        payment_ok = (len(row) >= 8 and row[7] == "Не оплачено")  # row[7] - статус
                     
                     if date_ok and payment_ok:
-                        repair_amount = float(row[3]) if row[3] else 0
-                        debt = float(row[5]) if row[5] else 0
-                        request_num = row[2] if len(row) > 2 else "?"
+                        repair_amount = float(row[4]) if row[4] else 0  # row[4] - сумма чека
+                        debt = float(row[6]) if row[6] else 0  # row[6] - долг фирме
+                        request_num = row[3] if len(row) > 3 else "?"  # row[3] - номер заявки
                         
                         firm_repairs += repair_amount
                         firm_debt += debt
                         firm_count += 1
-                        status = row[6] if len(row) > 6 else "?"
+                        status = row[7] if len(row) > 7 else "?"  # row[7] - статус
                         firm_requests.append(f"{request_num} - {repair_amount:,.0f} ₽ ({status})")
                 except:
                     continue
         
         # Считаем чаевые связанные с заявками фирмы
-        tips_data = sheet_tips.get_all_values()[1:]
+        tips_data = sheets_manager.get_user_data(sheets_manager.sheet_tips, user_id)
         for row in tips_data:
-            if len(row) >= 4:
+            if len(row) >= 5:  # user_id + 4 поля
                 try:
-                    row_date = datetime.datetime.strptime(row[0], "%d.%m.%Y").date()
-                    comment = row[3] if len(row) > 3 else ""
+                    row_date = datetime.datetime.strptime(row[1], "%d.%m.%Y").date()  # row[1] - дата
+                    comment = row[4] if len(row) > 4 else ""  # row[4] - комментарий
                     
                     date_ok = True
                     if date_filter and row_date < date_filter:
@@ -368,7 +357,7 @@ async def generate_firm_report(message: Message, state: FSMContext):
                     
                     # Если в комментарии есть упоминание фирмы или номера заявки
                     if date_ok and ("Фирма" in comment or any(req.split(' - ')[0] in comment for req in firm_requests if ' - ' in req)):
-                        firm_tips += float(row[2]) if row[2] else 0
+                        firm_tips += float(row[3]) if row[3] else 0  # row[3] - сумма
                 except:
                     continue
         
@@ -402,10 +391,8 @@ async def generate_firm_report(message: Message, state: FSMContext):
         await message.answer("❌ Ошибка формирования отчета фирме")
         logger.error(f"Firm report error: {e}")
 
-# Обработка кнопки "Назад" из любого состояния
+# Обработка кнопки "Назад"
 @router.message(lambda m: m.text == "⬅️ Назад")
 async def back_to_main(message: Message, state: FSMContext):
     await state.clear()
-    from keyboards import main_kb
     await message.answer("Главное меню:", reply_markup=main_kb)
-
