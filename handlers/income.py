@@ -1,30 +1,15 @@
+# handlers/income.py
 import datetime
 from aiogram import Router
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-import gspread
-from gspread.exceptions import APIError
 from utils.cancel_handler import cancel_handler
 from utils.user_manager import sheets_manager
 
-
 from keyboards import main_kb, income_kb, tips_kb
-from config import GSHEET_NAME, GSHEET_CREDS_JSON
 
 router = Router()
-
-# Подключение к Google Sheets
-from config import GSHEET_CREDS
-import gspread
-
-if GSHEET_CREDS:
-    gc = gspread.service_account_from_dict(GSHEET_CREDS)
-else:
-    gc = gspread.service_account(filename='creds.json')
-
-sheet_income = gc.open(GSHEET_NAME).worksheet("Доходы")
-sheet_tips = gc.open(GSHEET_NAME).worksheet("Чаевые")
 
 class IncomeStates(StatesGroup):
     source = State()
@@ -105,6 +90,8 @@ async def process_my_income(message: Message, state: FSMContext):
 @router.message(IncomeStates.tips)
 async def process_tips(message: Message, state: FSMContext):
     try:
+        user_id = str(message.from_user.id)
+        
         data = await state.get_data()
         source = data["source"]
         request_number = data.get('request_number', '')
@@ -112,23 +99,22 @@ async def process_tips(message: Message, state: FSMContext):
         my_income = data["my_income"]
         tips = float(message.text.replace(',', '.')) if message.text != "0" else 0
         
-        # Расчет долга фирме (только для фирмы)
+        # Расчет долга фирме
         debt_to_firm = repair_amount - my_income if source == "🏢 Фирма" else 0
         
         today = datetime.date.today().strftime("%d.%m.%Y")
         
-        # Записываем основной доход с статусом оплаты
-        # Новый формат: [Дата, Источник, № заявки, Сумма чека, Мой доход, Долг фирме, Статус оплаты]
+        # Записываем основной доход
         payment_status = "Не оплачено" if source == "🏢 Фирма" and debt_to_firm > 0 else "Нет долга"
         values = [today, source, request_number, repair_amount, my_income, debt_to_firm, payment_status]
-        sheet_income.append_row(values)
+        sheets_manager.append_user_row(sheets_manager.sheet_income, user_id, values)
         
         # Если есть чаевые - записываем их ОТДЕЛЬНО
         if tips > 0:
             tip_type = "Чаевые с заявки"
             tip_comment = f"Заявка {request_number} ({source})" if request_number else f"{source}"
             tip_values = [today, tip_type, tips, tip_comment]
-            sheet_tips.append_row(tip_values)
+            sheets_manager.append_user_row(sheets_manager.sheet_tips, user_id, tip_values)
         
         # Формируем ответ
         response = f"✅ Доход добавлен:\n"
@@ -150,6 +136,8 @@ async def process_tips(message: Message, state: FSMContext):
         
     except ValueError:
         await message.answer("❌ Введи нормальную сумму для чаевых (или 0 если нет):")
+    except Exception as e:
+        await message.answer("❌ Ошибка при добавлении дохода")
 
 # ========== ЧАЕВЫЕ ==========
 @router.message(lambda m: m.text == "💰 Чаевые")
@@ -180,6 +168,8 @@ async def process_tips_amount(message: Message, state: FSMContext):
 @router.message(TipsStates.comment)
 async def process_tips_comment(message: Message, state: FSMContext):
     try:
+        user_id = str(message.from_user.id)
+        
         data = await state.get_data()
         tip_type = data["tip_type"]
         amount = data["amount"]
@@ -187,7 +177,7 @@ async def process_tips_comment(message: Message, state: FSMContext):
         
         today = datetime.date.today().strftime("%d.%m.%Y")
         values = [today, tip_type, amount, comment]
-        sheet_tips.append_row(values)
+        sheets_manager.append_user_row(sheets_manager.sheet_tips, user_id, values)
         
         await message.answer(f"✅ Чаевые добавлены: {amount} ₽\n{tip_type}: {comment}", reply_markup=main_kb)
         await state.clear()
@@ -195,19 +185,8 @@ async def process_tips_comment(message: Message, state: FSMContext):
     except Exception as e:
         await message.answer("❌ Ошибка при добавлении чаевых")
 
-# Обработка кнопки "Назад" из любого состояния
+# Обработка кнопки "Назад"
 @router.message(lambda m: m.text == "⬅️ Назад")
 async def back_to_main(message: Message, state: FSMContext):
     await state.clear()
-    from keyboards import main_kb
     await message.answer("Главное меню:", reply_markup=main_kb)
-    
-# Обработчики для кнопок главного меню в роутере доходов
-@router.message(lambda m: m.text == "💵 Добавить доход")
-async def handle_income_button(message: Message, state: FSMContext):
-    await add_income_start(message, state)
-
-@router.message(lambda m: m.text == "💰 Чаевые")
-async def handle_tips_button(message: Message, state: FSMContext):
-    await add_tips_start(message, state)
-
