@@ -6,6 +6,8 @@ from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 import gspread
+from aiogram.utils.keyboard import ReplyKeyboardBuilder
+from aiogram.types import KeyboardButton
 from utils.cancel_handler import cancel_handler
 
 from keyboards import main_kb, report_kb, firm_report_kb
@@ -31,39 +33,132 @@ sheet_bets = gc.open(GSHEET_NAME).worksheet("Ставки")
 class FirmReportStates(StatesGroup):
     period = State()
 
+class MonthReportStates(StatesGroup):
+    select_month = State()
+
+# ========== КЛАВИАТУРА ВЫБОРА МЕСЯЦА ==========
+def get_months_kb():
+    """Клавиатура для выбора месяца"""
+    builder = ReplyKeyboardBuilder()
+    
+    # Текущий год и предыдущий
+    current_year = datetime.datetime.now().year
+    months_ru = [
+        "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+        "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"
+    ]
+    
+    # Добавляем месяцы текущего года
+    current_month = datetime.datetime.now().month
+    for i in range(current_month):
+        builder.add(KeyboardButton(text=f"{months_ru[i]} {current_year}"))
+    
+    # Добавляем месяцы предыдущего года
+    for i in range(12):
+        builder.add(KeyboardButton(text=f"{months_ru[i]} {current_year-1}"))
+    
+    builder.add(KeyboardButton(text="⬅️ Назад"))
+    builder.adjust(3, 3, 3, 3, 3, 3, 1)
+    return builder.as_markup(resize_keyboard=True)
+
 # ========== ОТЧЕТЫ ==========
 @router.message(lambda m: m.text == "📊 Отчет")
 async def show_reports(message: Message):
     await message.answer("Какой отчет нужен?", reply_markup=report_kb)
 
 @router.message(lambda m: m.text in ["📅 Сегодня", "📆 Неделя", "🗓️ Месяц", "📈 Год"])
-async def generate_personal_report(message: Message):
+async def generate_personal_report(message: Message, state: FSMContext):
+    if message.text == "🗓️ Месяц":
+        # Переходим к выбору конкретного месяца
+        await state.set_state(MonthReportStates.select_month)
+        await message.answer("Выбери месяц для отчета:", reply_markup=get_months_kb())
+        return
+        
+    # Остальные отчеты (сегодня, неделя, год) работают как раньше
+    await generate_period_report(message, message.text)
+
+@router.message(MonthReportStates.select_month)
+async def process_month_selection(message: Message, state: FSMContext):
+    if await cancel_handler(message, state):
+        return
+        
+    if message.text == "⬅️ Назад":
+        await state.clear()
+        await message.answer("Главное меню:", reply_markup=main_kb)
+        return
+    
+    # Парсим выбранный месяц
+    try:
+        month_text = message.text
+        await generate_monthly_report(message, month_text)
+        await state.clear()
+    except Exception as e:
+        await message.answer("❌ Ошибка при формировании отчета за месяц")
+        logger.error(f"Month report error: {e}")
+
+async def generate_monthly_report(message: Message, month_text: str):
+    """Генерация отчета за конкретный месяц"""
+    try:
+        # Парсим месяц и год из текста
+        months_ru = {
+            "Январь": 1, "Февраль": 2, "Март": 3, "Апрель": 4, "Май": 5, "Июнь": 6,
+            "Июль": 7, "Август": 8, "Сентябрь": 9, "Октябрь": 10, "Ноябрь": 11, "Декабрь": 12
+        }
+        
+        parts = month_text.split()
+        month_name = parts[0]
+        year = int(parts[1])
+        month = months_ru[month_name]
+        
+        # Определяем диапазон дат
+        start_date = datetime.date(year, month, 1)
+        if month == 12:
+            end_date = datetime.date(year + 1, 1, 1) - datetime.timedelta(days=1)
+        else:
+            end_date = datetime.date(year, month + 1, 1) - datetime.timedelta(days=1)
+        
+        await generate_report_by_dates(message, start_date, end_date, f"за {month_text.lower()}")
+        
+    except Exception as e:
+        await message.answer("❌ Не могу распознать месяц. Выбери из списка.")
+        logger.error(f"Month parsing error: {e}")
+
+async def generate_period_report(message: Message, period_type: str):
+    """Генерация отчета за стандартные периоды"""
+    today = datetime.date.today()
+    
+    if period_type == "📅 Сегодня":
+        start_date = today
+        end_date = today
+        period_text = "сегодня"
+    elif period_type == "📆 Неделя":
+        start_date = today - datetime.timedelta(days=7)
+        end_date = today
+        period_text = "за неделю"
+    elif period_type == "📈 Год":
+        start_date = today - datetime.timedelta(days=365)
+        end_date = today
+        period_text = "за год"
+    else:  # Месяц (динамический)
+        start_date = today - datetime.timedelta(days=30)
+        end_date = today
+        period_text = "за месяц"
+    
+    await generate_report_by_dates(message, start_date, end_date, period_text)
+
+async def generate_report_by_dates(message: Message, start_date: datetime.date, end_date: datetime.date, period_text: str):
+    """Общая функция генерации отчета по датам"""
     try:
         incomes = sheet_income.get_all_values()[1:]
         expenses = sheet_expense.get_all_values()[1:]
         tips_data = sheet_tips.get_all_values()[1:]
         bets_data = sheet_bets.get_all_values()[1:] if sheet_bets else []
         
-        today = datetime.date.today()
-        
-        if message.text == "📅 Сегодня":
-            start_date = today
-            period_text = "сегодня"
-        elif message.text == "📆 Неделя":
-            start_date = today - datetime.timedelta(days=7)
-            period_text = "за неделю"
-        elif message.text == "🗓️ Месяц":
-            start_date = today - datetime.timedelta(days=30)
-            period_text = "за месяц"
-        else:  # Год
-            start_date = today - datetime.timedelta(days=365)
-            period_text = "за год"
-        
         # Расчеты
         total_my_income = 0
         total_tips = 0
         total_expenses = 0
-        total_bets_net = 0  # Чистый результат ставок (выводы - пополнения)
+        total_bets_net = 0
         firm_count = 0
         avito_count = 0
         sarafanka_count = 0
@@ -73,7 +168,7 @@ async def generate_personal_report(message: Message):
             if len(row) >= 5:
                 try:
                     row_date = datetime.datetime.strptime(row[0], "%d.%m.%Y").date()
-                    if row_date >= start_date:
+                    if start_date <= row_date <= end_date:
                         my_income = float(row[4]) if row[4] else 0
                         total_my_income += my_income
                         
@@ -91,7 +186,7 @@ async def generate_personal_report(message: Message):
             if len(row) >= 3:
                 try:
                     row_date = datetime.datetime.strptime(row[0], "%d.%m.%Y").date()
-                    if row_date >= start_date:
+                    if start_date <= row_date <= end_date:
                         total_tips += float(row[2]) if row[2] else 0
                 except:
                     continue
@@ -101,7 +196,7 @@ async def generate_personal_report(message: Message):
             if len(row) >= 3:
                 try:
                     row_date = datetime.datetime.strptime(row[0], "%d.%m.%Y").date()
-                    if row_date >= start_date:
+                    if start_date <= row_date <= end_date:
                         total_expenses += float(row[2]) if row[2] else 0
                 except:
                     continue
@@ -113,7 +208,7 @@ async def generate_personal_report(message: Message):
             if len(row) >= 3:
                 try:
                     row_date = datetime.datetime.strptime(row[0], "%d.%m.%Y").date()
-                    if row_date >= start_date:
+                    if start_date <= row_date <= end_date:
                         operation_type = row[1]
                         amount = float(row[2]) if row[2] else 0
                         
@@ -131,8 +226,15 @@ async def generate_personal_report(message: Message):
         total_with_bets = total_income_with_tips + total_bets_net
         balance = total_with_bets - total_expenses
         
+        # Форматируем даты для заголовка
+        if period_text.startswith("за "):
+            date_range = f"{start_date.strftime('%d.%m.%Y')} - {end_date.strftime('%d.%m.%Y')}"
+        else:
+            date_range = start_date.strftime('%d.%m.%Y')
+        
         response = (
             f"📊 ОТЧЕТ {period_text.upper()}:\n"
+            f"📅 Период: {date_range}\n\n"
             f"💼 Основной доход: {total_my_income:,.0f} ₽\n"
             f"💝 Чаевые/подарки: {total_tips:,.0f} ₽\n"
             f"🎰 Ставки: {total_bets_net:+,.0f} ₽\n"
