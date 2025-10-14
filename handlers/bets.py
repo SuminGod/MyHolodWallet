@@ -7,6 +7,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 import gspread
 from gspread.exceptions import APIError
+from utils.user_manager import sheets_manager
+
 
 from keyboards import main_kb, bets_kb, bets_report_kb
 from config import GSHEET_NAME, GSHEET_CREDS_JSON
@@ -186,4 +188,5 @@ async def back_to_main(message: Message, state: FSMContext):
 async def handle_bets_button(message: Message):
 
     await bets_main(message)
+
 
