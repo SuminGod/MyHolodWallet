@@ -5,33 +5,12 @@ from aiogram import Router
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-import gspread
-from gspread.exceptions import APIError
 from utils.user_manager import sheets_manager
 
-
 from keyboards import main_kb, bets_kb, bets_report_kb
-from config import GSHEET_NAME, GSHEET_CREDS_JSON
 
 router = Router()
 logger = logging.getLogger(__name__)
-
-# Подключение к Google Sheets
-try:
-    from config import GSHEET_CREDS
-    import gspread
-    
-    if GSHEET_CREDS:
-        gc = gspread.service_account_from_dict(GSHEET_CREDS)
-    else:
-        gc = gspread.service_account(filename='creds.json')
-        
-    sheet_bets = gc.open(GSHEET_NAME).worksheet("Ставки")
-    logger.info("✅ Таблица 'Ставки' подключена")
-except Exception as e:
-    logger.error(f"❌ Ошибка подключения к таблице 'Ставки': {e}")
-    # Создаем заглушку чтобы бот не падал
-    sheet_bets = None
 
 class BetsStates(StatesGroup):
     operation_type = State()
@@ -60,6 +39,8 @@ async def start_bet_operation(message: Message, state: FSMContext):
 @router.message(BetsStates.amount)
 async def process_bet_amount(message: Message, state: FSMContext):
     try:
+        user_id = str(message.from_user.id)
+        
         data = await state.get_data()
         operation_type = data["operation_type"]
         amount = float(message.text.replace(',', '.'))
@@ -67,23 +48,25 @@ async def process_bet_amount(message: Message, state: FSMContext):
         today = datetime.date.today().strftime("%d.%m.%Y")
         
         # Записываем в таблицу
-        if sheet_bets:
-            values = [today, operation_type, amount]
-            sheet_bets.append_row(values)
+        values = [today, operation_type, amount]
+        success = sheets_manager.append_user_row(sheets_manager.sheet_bets, user_id, values)
         
-        if operation_type == "Пополнение":
-            response = f"✅ Пополнение добавлено: +{amount} ₽"
+        if success:
+            if operation_type == "Пополнение":
+                response = f"✅ Пополнение добавлено: +{amount} ₽"
+            else:
+                response = f"✅ Вывод добавлен: -{amount} ₽"
+            
+            await message.answer(response, reply_markup=bets_kb)
+            await state.clear()
         else:
-            response = f"✅ Вывод добавлен: -{amount} ₽"
-        
-        await message.answer(response, reply_markup=bets_kb)
-        await state.clear()
+            await message.answer("❌ Ошибка при записи в таблицу")
         
     except ValueError:
         await message.answer("❌ Введи нормальную сумму:")
-    except APIError as e:
+    except Exception as e:
         await message.answer("❌ Ошибка записи в таблицу")
-        logger.error(f"Bets API error: {e}")
+        logger.error(f"Bets error: {e}")
 
 # ========== ОТЧЕТЫ ПО СТАВКАМ ==========
 @router.message(lambda m: m.text == "📊 Отчет ставок")
@@ -99,11 +82,8 @@ async def generate_bets_report(message: Message, state: FSMContext):
         return
         
     try:
-        if not sheet_bets:
-            await message.answer("❌ Таблица ставок не доступна")
-            return
-            
-        bets_data = sheet_bets.get_all_values()[1:]  # пропускаем заголовок
+        user_id = str(message.from_user.id)
+        bets_data = sheets_manager.get_user_data(sheets_manager.sheet_bets, user_id)
         
         today = datetime.date.today()
         
@@ -127,12 +107,12 @@ async def generate_bets_report(message: Message, state: FSMContext):
         withdrawals_count = 0
         
         for row in bets_data:
-            if len(row) >= 3:
+            if len(row) >= 4:  # user_id + 3 поля
                 try:
-                    row_date = datetime.datetime.strptime(row[0], "%d.%m.%Y").date()
+                    row_date = datetime.datetime.strptime(row[1], "%d.%m.%Y").date()  # row[1] - дата
                     if row_date >= start_date:
-                        operation_type = row[1]
-                        amount = float(row[2]) if row[2] else 0
+                        operation_type = row[2]  # row[2] - операция
+                        amount = float(row[3]) if row[3] else 0  # row[3] - сумма
                         
                         if operation_type == "Пополнение":
                             total_deposits += amount
@@ -171,22 +151,8 @@ async def generate_bets_report(message: Message, state: FSMContext):
         await message.answer("❌ Ошибка формирования отчета по ставкам")
         logger.error(f"Bets report error: {e}")
 
-# Обработка кнопки "Назад" в меню ставок
+# Обработка кнопки "Назад"
 @router.message(lambda m: m.text == "⬅️ Назад")
 async def back_from_bets(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("Главное меню:", reply_markup=main_kb)
-    # Обработка кнопки "Назад" из любого состояния
-@router.message(lambda m: m.text == "⬅️ Назад")
-async def back_to_main(message: Message, state: FSMContext):
-    await state.clear()
-    from keyboards import main_kb
-    await message.answer("Главное меню:", reply_markup=main_kb)
-    
-    # Обработчик для кнопки ставок
-@router.message(lambda m: m.text == "🎯 Ставки")
-async def handle_bets_button(message: Message):
-
-    await bets_main(message)
-
-
