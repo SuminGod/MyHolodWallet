@@ -49,7 +49,7 @@ async def process_category_selection(callback: CallbackQuery, state: FSMContext)
         await callback.message.edit_text(
             "❌ В этой категории нет записей для удаления",
             reply_markup=InlineKeyboardBuilder()
-                .add(InlineKeyboardButton(text="⬅️ Назад", callback_data="delete_back"))
+                .add(InlineKeyboardButton(text="⬅️ Назад к категориям", callback_data="delete_back_to_categories"))
                 .as_markup()
         )
         return
@@ -67,13 +67,30 @@ async def get_user_records(user_id: str, category: str):
             user_records = []
             for i, row in enumerate(all_data, start=1):
                 if len(row) > 0 and row[0] == user_id:
+                    # Формируем информативный текст для отображения
+                    date = row[1] if len(row) > 1 else ''
+                    source = row[2] if len(row) > 2 else ''
+                    request_number = row[3] if len(row) > 3 else ''
+                    repair_amount = row[4] if len(row) > 4 else '0'
+                    my_income = row[5] if len(row) > 5 else '0'
+                    debt = row[6] if len(row) > 6 else '0'
+                    
+                    # Для разных источников показываем разную информацию
+                    if source == "🏢 Фирма":
+                        display_text = f"{date} - {source} - Заявка {request_number} - Чек: {repair_amount}₽ - Доход: {my_income}₽ - Долг: {debt}₽"
+                    else:
+                        # Для Авито/Сарафанки показываем личный доход (вся сумма)
+                        display_text = f"{date} - {source} - Доход: {my_income}₽"
+                    
                     user_records.append({
                         'row_index': i,
-                        'date': row[1] if len(row) > 1 else '',
-                        'source': row[2] if len(row) > 2 else '',
-                        'request_number': row[3] if len(row) > 3 else '',
-                        'amount': row[4] if len(row) > 4 else '',
-                        'display_text': f"{row[1]} - {row[2]} - {row[4]} ₽" if len(row) > 4 else 'Неполные данные'
+                        'date': date,
+                        'source': source,
+                        'request_number': request_number,
+                        'repair_amount': repair_amount,
+                        'my_income': my_income,
+                        'debt': debt,
+                        'display_text': display_text
                     })
             return user_records[-10:]  # Последние 10 записей
         
@@ -83,12 +100,22 @@ async def get_user_records(user_id: str, category: str):
             user_records = []
             for i, row in enumerate(all_data, start=1):
                 if len(row) > 0 and row[0] == user_id:
+                    date = row[1] if len(row) > 1 else ''
+                    category_expense = row[2] if len(row) > 2 else ''
+                    amount = row[3] if len(row) > 3 else '0'
+                    comment = row[4] if len(row) > 4 else ''
+                    
+                    display_text = f"{date} - {category_expense} - {amount}₽"
+                    if comment:
+                        display_text += f" - {comment}"
+                    
                     user_records.append({
                         'row_index': i,
-                        'date': row[1] if len(row) > 1 else '',
-                        'category': row[2] if len(row) > 2 else '',
-                        'amount': row[3] if len(row) > 3 else '',
-                        'display_text': f"{row[1]} - {row[2]} - {row[3]} ₽" if len(row) > 3 else 'Неполные данные'
+                        'date': date,
+                        'category': category_expense,
+                        'amount': amount,
+                        'comment': comment,
+                        'display_text': display_text
                     })
             return user_records[-10:]  # Последние 10 записей
         
@@ -98,12 +125,22 @@ async def get_user_records(user_id: str, category: str):
             user_records = []
             for i, row in enumerate(all_data, start=1):
                 if len(row) > 0 and row[0] == user_id:
+                    date = row[1] if len(row) > 1 else ''
+                    tip_type = row[2] if len(row) > 2 else ''
+                    amount = row[3] if len(row) > 3 else '0'
+                    comment = row[4] if len(row) > 4 else ''
+                    
+                    display_text = f"{date} - {tip_type} - {amount}₽"
+                    if comment:
+                        display_text += f" - {comment}"
+                    
                     user_records.append({
                         'row_index': i,
-                        'date': row[1] if len(row) > 1 else '',
-                        'type': row[2] if len(row) > 2 else '',
-                        'amount': row[3] if len(row) > 3 else '',
-                        'display_text': f"{row[1]} - {row[2]} - {row[3]} ₽" if len(row) > 3 else 'Неполные данные'
+                        'date': date,
+                        'type': tip_type,
+                        'amount': amount,
+                        'comment': comment,
+                        'display_text': display_text
                     })
             return user_records[-10:]  # Последние 10 записей
         
@@ -113,12 +150,18 @@ async def get_user_records(user_id: str, category: str):
             user_records = []
             for i, row in enumerate(all_data, start=1):
                 if len(row) > 0 and row[0] == user_id:
+                    date = row[1] if len(row) > 1 else ''
+                    operation = row[2] if len(row) > 2 else ''
+                    amount = row[3] if len(row) > 3 else '0'
+                    
+                    display_text = f"{date} - {operation} - {amount}₽"
+                    
                     user_records.append({
                         'row_index': i,
-                        'date': row[1] if len(row) > 1 else '',
-                        'operation': row[2] if len(row) > 2 else '',
-                        'amount': row[3] if len(row) > 3 else '',
-                        'display_text': f"{row[1]} - {row[2]} - {row[3]} ₽" if len(row) > 3 else 'Неполные данные'
+                        'date': date,
+                        'operation': operation,
+                        'amount': amount,
+                        'display_text': display_text
                     })
             return user_records[-10:]  # Последние 10 записей
         
@@ -141,12 +184,17 @@ async def show_records_for_deletion(message: Message, records: list, category: s
     
     # Добавляем кнопки для каждой записи
     for i, record in enumerate(records):
+        # Обрезаем длинный текст для кнопки
+        button_text = record['display_text']
+        if len(button_text) > 35:
+            button_text = button_text[:35] + "..."
+        
         keyboard.add(InlineKeyboardButton(
-            text=f"❌ {record['display_text']}",
+            text=f"❌ {button_text}",
             callback_data=f"select_record_{i}"
         ))
     
-    keyboard.add(InlineKeyboardButton(text="⬅️ Назад", callback_data="delete_back"))
+    keyboard.add(InlineKeyboardButton(text="⬅️ Назад к категориям", callback_data="delete_back_to_categories"))
     keyboard.adjust(1)
     
     await message.edit_text(
@@ -169,7 +217,7 @@ async def process_record_selection(callback: CallbackQuery, state: FSMContext):
         
         keyboard = InlineKeyboardBuilder()
         keyboard.add(InlineKeyboardButton(text="✅ Да, удалить", callback_data="confirm_delete"))
-        keyboard.add(InlineKeyboardButton(text="❌ Нет, отмена", callback_data="delete_back"))
+        keyboard.add(InlineKeyboardButton(text="❌ Нет, отмена", callback_data="delete_back_to_records"))
         keyboard.adjust(2)
         
         await callback.message.edit_text(
@@ -216,7 +264,7 @@ async def confirm_deletion(callback: CallbackQuery, state: FSMContext):
         await callback.message.edit_text(
             f"❌ Ошибка при удалении записи: {str(e)}",
             reply_markup=InlineKeyboardBuilder()
-                .add(InlineKeyboardButton(text="⬅️ Назад", callback_data="delete_back"))
+                .add(InlineKeyboardButton(text="⬅️ Назад к записям", callback_data="delete_back_to_records"))
                 .as_markup()
         )
     
@@ -224,16 +272,38 @@ async def confirm_deletion(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(lambda c: c.data == 'delete_more')
 async def delete_more_records(callback: CallbackQuery, state: FSMContext):
+    # Возвращаемся к выбору категории
     await delete_records_start(callback.message, state)
     await callback.answer()
 
-@router.callback_query(lambda c: c.data in ['delete_back', 'delete_cancel'])
+@router.callback_query(lambda c: c.data == 'delete_back_to_records')
+async def back_to_records(callback: CallbackQuery, state: FSMContext):
+    """Вернуться к списку записей текущей категории"""
+    data = await state.get_data()
+    category = data.get('category')
+    records = data.get('records', [])
+    
+    if category and records:
+        await show_records_for_deletion(callback.message, records, category, state)
+    else:
+        await delete_records_start(callback.message, state)
+    
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data == 'delete_back_to_categories')
 async def back_to_categories(callback: CallbackQuery, state: FSMContext):
+    """Вернуться к выбору категории"""
     await delete_records_start(callback.message, state)
     await callback.answer()
+
+@router.callback_query(lambda c: c.data == 'delete_cancel')
+async def cancel_deletion(callback: CallbackQuery, state: FSMContext):
+    """Отмена удаления - вернуться в главное меню"""
+    await back_to_main_menu(callback, state)
 
 @router.callback_query(lambda c: c.data == 'delete_main')
 async def back_to_main_menu(callback: CallbackQuery, state: FSMContext):
+    """Вернуться в главное меню"""
     await state.clear()
     await callback.message.edit_text(
         "🏠 Возврат в главное меню",
@@ -242,7 +312,7 @@ async def back_to_main_menu(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer("Главное меню:", reply_markup=main_kb)
     await callback.answer()
 
-# Обработка кнопки "Назад"
+# Обработка кнопки "Назад" из текстового сообщения
 @router.message(lambda m: m.text == "⬅️ Назад")
 async def back_to_main(message: Message, state: FSMContext):
     await state.clear()
