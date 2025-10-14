@@ -31,16 +31,13 @@ class FirmReportStates(StatesGroup):
     period = State()
 
 # ========== ОТЧЕТЫ ==========
-@router.message(lambda m: m.text == "📊 Отчет")
-async def show_reports(message: Message):
-    await message.answer("Какой отчет нужен?", reply_markup=report_kb)
-
 @router.message(lambda m: m.text in ["📅 Сегодня", "📆 Неделя", "🗓️ Месяц", "📈 Год"])
 async def generate_personal_report(message: Message):
     try:
         incomes = sheet_income.get_all_values()[1:]
         expenses = sheet_expense.get_all_values()[1:]
         tips_data = sheet_tips.get_all_values()[1:]
+        bets_data = sheet_bets.get_all_values()[1:] if sheet_bets else []
         
         today = datetime.date.today()
         
@@ -61,11 +58,12 @@ async def generate_personal_report(message: Message):
         total_my_income = 0
         total_tips = 0
         total_expenses = 0
+        total_bets_net = 0  # Чистый результат ставок (выводы - пополнения)
         firm_count = 0
         avito_count = 0
         sarafanka_count = 0
         
-        # Основные доходы (из таблицы доходов)
+        # Основные доходы
         for row in incomes:
             if len(row) >= 5:
                 try:
@@ -83,7 +81,7 @@ async def generate_personal_report(message: Message):
                 except:
                     continue
         
-        # Чаевые (из таблицы чаевых)
+        # Чаевые
         for row in tips_data:
             if len(row) >= 3:
                 try:
@@ -103,15 +101,36 @@ async def generate_personal_report(message: Message):
                 except:
                     continue
         
+        # Ставки
+        bets_deposits = 0
+        bets_withdrawals = 0
+        for row in bets_data:
+            if len(row) >= 3:
+                try:
+                    row_date = datetime.datetime.strptime(row[0], "%d.%m.%Y").date()
+                    if row_date >= start_date:
+                        operation_type = row[1]
+                        amount = float(row[2]) if row[2] else 0
+                        
+                        if operation_type == "Пополнение":
+                            bets_deposits += amount
+                        elif operation_type == "Вывод":
+                            bets_withdrawals += amount
+                except:
+                    continue
+        
+        total_bets_net = bets_withdrawals - bets_deposits
+        
         # Общие расчеты
         total_income_with_tips = total_my_income + total_tips
-        balance = total_income_with_tips - total_expenses
+        total_with_bets = total_income_with_tips + total_bets_net
+        balance = total_with_bets - total_expenses
         
         response = (
             f"📊 ОТЧЕТ {period_text.upper()}:\n"
             f"💼 Основной доход: {total_my_income:,.0f} ₽\n"
             f"💝 Чаевые/подарки: {total_tips:,.0f} ₽\n"
-            f"🎯 Общий доход: {total_income_with_tips:,.0f} ₽\n"
+            f"🎰 Ставки: {total_bets_net:+,.0f} ₽\n"
             f"📤 Расходы: {total_expenses:,.0f} ₽\n"
             f"⚖️ Баланс: {balance:,.0f} ₽\n\n"
             f"📈 Статистика заявок:\n"
@@ -299,4 +318,5 @@ async def back_to_main(message: Message, state: FSMContext):
 async def handle_report_button(message: Message):
 
     await show_reports(message)
+
 
