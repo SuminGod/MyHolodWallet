@@ -4,7 +4,7 @@ from config import GSHEET_CREDS, GSHEET_NAME
 
 # Белый список пользователей
 ALLOWED_USERS = [
-    "129077607",  # Замени на свой ID
+    "129077607",  # Замени на свой реальный Telegram ID
 ]
 
 class UserSheetsManager:
@@ -27,23 +27,39 @@ class UserSheetsManager:
     
     def get_user_data(self, sheet, user_id: str):
         """Получить данные только для конкретного пользователя"""
-        all_data = sheet.get_all_values()
-        if not all_data:
+        try:
+            all_data = sheet.get_all_values()
+            if not all_data:
+                return []
+            
+            user_data = []
+            
+            for row in all_data:
+                if len(row) > 0 and row[0] == user_id:  # user_id в первом столбце
+                    user_data.append(row)
+            
+            return user_data
+        except Exception as e:
+            print(f"Error getting user data: {e}")
             return []
-        
-        headers = all_data[0]
-        user_data = []
-        
-        for row in all_data[1:]:
-            if len(row) > 0 and row[0] == user_id:  # user_id в первом столбце
-                user_data.append(row)
-        
-        return user_data
+    
+    def get_all_data(self, sheet):
+        """Получить все данные из листа"""
+        try:
+            return sheet.get_all_values()
+        except Exception as e:
+            print(f"Error getting all data: {e}")
+            return []
     
     def append_user_row(self, sheet, user_id: str, values: list):
         """Добавить строку с user_id"""
-        row_data = [user_id] + values
-        sheet.append_row(row_data)
+        try:
+            row_data = [user_id] + values
+            sheet.append_row(row_data)
+            return True
+        except Exception as e:
+            print(f"Error appending row: {e}")
+            return False
 
 # Глобальный менеджер
 sheets_manager = UserSheetsManager()
