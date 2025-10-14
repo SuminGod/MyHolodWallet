@@ -6,6 +6,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 import gspread
 from utils.cancel_handler import cancel_handler
+from utils.user_manager import sheets_manager
+
 
 from keyboards import main_kb, expense_kb
 from config import GSHEET_NAME, GSHEET_CREDS_JSON
@@ -71,3 +73,4 @@ async def back_to_main(message: Message, state: FSMContext):
 async def handle_expense_button(message: Message, state: FSMContext):
 
     await add_expense_start(message, state)
+
