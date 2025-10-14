@@ -11,7 +11,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import TOKEN
-from handlers import base_router, income_router, expense_router, reports_router, bets_router, firm_payment_router
+from handlers import base_router, income_router, expense_router, reports_router, bets_router, firm_payment_router, admin_router
 
 # =======================
 # Настройка логирования
@@ -34,6 +34,7 @@ async def main():
         # =======================
         # Регистрация роутеров
         # =======================
+        dp.include_router(admin_router) 
         dp.include_router(income_router)
         dp.include_router(expense_router)
         dp.include_router(reports_router)
@@ -57,3 +58,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
