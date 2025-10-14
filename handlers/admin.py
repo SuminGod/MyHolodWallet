@@ -13,7 +13,7 @@ class AdminStates(StatesGroup):
     waiting_user_id = State()
 
 # ID администратора (замени на свой)
-ADMIN_ID = "129077607"  # Замени на свой Telegram ID
+ADMIN_ID = "129077607"  # Замени на свой реальный Telegram ID
 
 def is_admin(user_id: str) -> bool:
     return str(user_id) == ADMIN_ID
@@ -84,5 +84,3 @@ async def remove_user_start(message: Message, state: FSMContext):
         await state.set_state(AdminStates.waiting_user_id)
     else:
         await message.answer("❌ Нет пользователей для удаления")
-
-# Добавь этот обработчик в __init__.py
