@@ -18,7 +18,7 @@ class PaymentStates(StatesGroup):
 
 def confirm_kb():
     builder = ReplyKeyboardBuilder()
-    builder.add(KeyboardButton(text="✅ Подтвердить оплату"))
+    builder.add(KeyboardButton(text="✅ Подтвердить оплату "))
     builder.add(KeyboardButton(text="❌ Отмена"))
     builder.add(KeyboardButton(text="⬅️ Назад"))
     builder.adjust(2, 1)
