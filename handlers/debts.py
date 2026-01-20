@@ -67,19 +67,33 @@ async def add_debt_amount(message: Message, state: FSMContext):
 @router.message(DebtStates.percent)
 async def add_debt_final(message: Message, state: FSMContext):
     try:
+        # Получаем всё, что ввели на прошлых шагах
         data = await state.get_data()
         user_id = str(message.from_user.id)
-        amount = float(message.text.replace(',', '.')) # Здесь мы берем процент из последнего ввода
         
-        # Запись: ID(0), Название(1), Нач.сумма(2), Остаток(3), %(4), Дата(5)
-        values = [user_id, data['name'], data['amount'], data['amount'], message.text, datetime.date.today().strftime("%d.%m.%Y")]
+        # Очищаем ввод процентов от лишних символов
+        percent_str = message.text.replace('%', '').replace(',', '.').strip()
+        
+        # Формируем список для записи: 
+        # ID(0), Название(1), Нач.сумма(2), Остаток(3), %(4), Дата(5)
+        values = [
+            user_id, 
+            data['name'], 
+            data['amount'], # Начальная сумма из FSM
+            data['amount'], # Остаток (при создании равен начальной сумме)
+            percent_str,    # Процент
+            datetime.date.today().strftime("%d.%m.%Y")
+        ]
+        
+        # Запись в таблицу
         sheets_manager.sheet_debts.append_row(values)
         
-        await message.answer(f"✅ Долг {data['name']} добавлен!", reply_markup=debt_kb)
+        await message.answer(f"✅ Долг «{data['name']}» успешно добавлен!", reply_markup=debt_kb)
         await state.clear()
+        
     except Exception as e:
-        logger.error(f"Error adding debt: {e}")
-        await message.answer("❌ Ошибка при сохранении.")
+        logger.error(f"Ошибка при добавлении долга: {e}")
+        await message.answer("❌ Произошла ошибка. Убедитесь, что вы ввели только числа.")
 
 # --- ВНЕСЕНИЕ ПЛАТЕЖА ---
 @router.message(F.text == "💸 Внести платеж")
