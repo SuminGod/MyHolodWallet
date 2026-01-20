@@ -33,19 +33,30 @@ async def show_debt_list(message: Message):
         await message.answer("У вас пока нет активных долгов.")
         return
 
-    text = "📉 ВАШИ ДОЛГИ И КРЕДИТЫ:\n\n"
+    text = "📉 ВАШИ АКТИВНЫЕ ДОЛГИ:\n\n"
     total_remaining = 0
+    active_count = 0
     
     for row in debts:
         try:
             # ID(0), Название(1), Нач. сумма(2), Остаток(3), %(4)
-            name = row[1]
             remaining = float(str(row[3]).replace(',', '.'))
+            
+            # ФИЛЬТР: Пропускаем, если долг 0
+            if remaining <= 0:
+                continue
+                
+            name = row[1]
             percent = row[4]
             total_remaining += remaining
+            active_count += 1
             text += f"• {name}: {remaining:,.0f} ₽ ({percent}%)\n"
         except: continue
     
+    if active_count == 0:
+        await message.answer("🎉 Поздравляю! Все ваши долги погашены.")
+        return
+
     text += f"\n💰 Итого осталось: {total_remaining:,.0f} ₽"
     await message.answer(text)
 
@@ -106,21 +117,30 @@ async def pay_debt_start(message: Message, state: FSMContext):
     debts = sheets_manager.get_user_data(sheets_manager.sheet_debts, user_id)
     
     if not debts:
-        await message.answer("⚠️ У вас нет активных долгов для оплаты.")
+        await message.answer("⚠️ У вас нет активных долгов.")
         return
     
     builder = ReplyKeyboardBuilder()
+    has_active = False
+    
     for row in debts:
-        builder.add(KeyboardButton(text=row[1]))
+        try:
+            remaining = float(str(row[3]).replace(',', '.'))
+            # Добавляем в кнопки только если остаток > 0
+            if remaining > 0:
+                builder.add(KeyboardButton(text=row[1]))
+                has_active = True
+        except: continue
+    
+    if not has_active:
+        await message.answer("✅ Все долги уже погашены!")
+        return
     
     builder.add(KeyboardButton(text="⬅️ Назад"))
     builder.adjust(2)
     
-    await state.set_state(DebtStates.payment_amount) 
-    await message.answer(
-        "Выберите долг для погашения:", 
-        reply_markup=builder.as_markup(resize_keyboard=True)
-    )
+    await state.set_state(DebtStates.payment_amount)
+    await message.answer("Выберите долг для погашения:", reply_markup=builder.as_markup(resize_keyboard=True))
 
 @router.message(DebtStates.payment_amount)
 async def process_debt_choice(message: Message, state: FSMContext):
