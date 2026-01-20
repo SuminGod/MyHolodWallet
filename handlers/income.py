@@ -1,65 +1,192 @@
-# handlers/income_work.py
+# handlers/income.py
 import datetime
-from aiogram import Router, F
+from aiogram import Router
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
+from utils.cancel_handler import cancel_handler
 from utils.user_manager import sheets_manager
-from keyboards import main_kb, get_income_kb, get_work_kb
+
+from keyboards import main_kb, income_kb, tips_kb
 
 router = Router()
 
-class FinanceStates(StatesGroup):
-    choosing_category = State()
-    entering_amount = State()
-    # Для работы
-    work_request_num = State()
-    work_repair_sum = State()
-    work_my_share = State()
-    work_tips = State()
+class IncomeStates(StatesGroup):
+    source = State()
+    request_number = State()
+    amount = State()
+    my_income = State()
+    tips = State()
 
-# --- ЛИЧНЫЙ ДОХОД ---
-@router.message(F.text == "💰 Доход")
-async def income_start(message: Message, state: FSMContext):
-    await state.set_state(FinanceStates.choosing_category)
-    await message.answer("Откуда деньги?", reply_markup=get_income_kb())
+class TipsStates(StatesGroup):
+    type = State()
+    amount = State()
+    comment = State()
 
-@router.message(FinanceStates.choosing_category, F.text.in_(["💰 Зарплата", "🎁 Подарок", "📈 Кэшбэк", "📦 Продажа вещей", "🔄 Прочее"]))
-async def process_income_cat(message: Message, state: FSMContext):
-    await state.update_data(category=message.text, type="Личное")
-    await state.set_state(FinanceStates.entering_amount)
-    await message.answer(f"Сумма ({message.text}):")
+# ========== ДОХОДЫ ==========
+@router.message(lambda m: m.text == "💵 Добавить доход")
+async def add_income_start(message: Message, state: FSMContext):
+    await state.set_state(IncomeStates.source)
+    await message.answer("Откуда заявка?", reply_markup=income_kb)
 
-@router.message(FinanceStates.entering_amount)
-async def save_personal_income(message: Message, state: FSMContext):
+@router.message(IncomeStates.source)
+async def process_income_source(message: Message, state: FSMContext):
+    if await cancel_handler(message, state):
+        return
+    
+    await state.update_data(source=message.text)
+    
+    if message.text == "🏢 Фирма":
+        await state.set_state(IncomeStates.request_number)
+        await message.answer("🔢 Номер заявки от фирмы:")
+    else:  # Авито/Сарафанка
+        await state.set_state(IncomeStates.amount) 
+        await message.answer("💰 Сколько получил по чеку?")
+
+@router.message(IncomeStates.request_number)
+async def process_request_number(message: Message, state: FSMContext):
+    await state.update_data(request_number=message.text)
+    await state.set_state(IncomeStates.amount)
+    await message.answer("💰 Общая сумма по чеку фирмы:")
+
+@router.message(IncomeStates.amount)
+async def process_income_amount(message: Message, state: FSMContext):
     try:
-        amount = float(message.text.replace(',', '.'))
         data = await state.get_data()
+        source = data["source"]
+        amount = float(message.text.replace(',', '.'))
+        
+        if source == "🏢 Фирма":
+            await state.update_data(repair_amount=amount)
+            await state.set_state(IncomeStates.my_income)
+            await message.answer("💸 Сколько твой доход по чеку?")
+        else:
+            # Авито/Сарафанка - вся сумма это мой доход
+            await state.update_data(my_income=amount)
+            await state.set_state(IncomeStates.tips)
+            await message.answer("💝 Были чаевые? (Если нет - напиши 0)")
+            
+    except ValueError:
+        await message.answer("❌ Введи нормальную сумму:")
+
+@router.message(IncomeStates.my_income)
+async def process_my_income(message: Message, state: FSMContext):
+    try:
+        data = await state.get_data()
+        my_income = float(message.text.replace(',', '.'))
+        repair_amount = data["repair_amount"]
+        
+        if my_income > repair_amount:
+            await message.answer("❌ Твой доход не может быть больше общей суммы. Введи корректную сумму:")
+            return
+            
+        await state.update_data(my_income=my_income)
+        await state.set_state(IncomeStates.tips)
+        await message.answer("💝 Были чаевые? (Если нет - напиши 0)")
+        
+    except ValueError:
+        await message.answer("❌ Введи нормальную сумму:")
+
+@router.message(IncomeStates.tips)
+async def process_tips(message: Message, state: FSMContext):
+    try:
         user_id = str(message.from_user.id)
+        
+        data = await state.get_data()
+        source = data["source"]
+        request_number = data.get('request_number', '')
+        repair_amount = data.get("repair_amount", 0)
+        my_income = data["my_income"]
+        tips = float(message.text.replace(',', '.')) if message.text != "0" else 0
+        
+        # Расчет долга фирме
+        debt_to_firm = repair_amount - my_income if source == "🏢 Фирма" else 0
+        
         today = datetime.date.today().strftime("%d.%m.%Y")
         
-        # Запись: Дата | Тип | Категория | № Заявки | Чек | Доход | Долг | Статус
-        values = [today, data['type'], data['category'], "-", amount, amount, 0, "Нет долга"]
+        # Записываем основной доход
+        payment_status = "Не оплачено" if source == "🏢 Фирма" and debt_to_firm > 0 else "Нет долга"
+        values = [today, source, request_number, repair_amount, my_income, debt_to_firm, payment_status]
         sheets_manager.append_user_row(sheets_manager.sheet_income, user_id, values)
         
-        await message.answer(f"✅ Записал: +{amount}₽", reply_markup=main_kb)
+        # Если есть чаевые - записываем их ОТДЕЛЬНО
+        if tips > 0:
+            tip_type = "Чаевые с заявки"
+            tip_comment = f"Заявка {request_number} ({source})" if request_number else f"{source}"
+            tip_values = [today, tip_type, tips, tip_comment]
+            sheets_manager.append_user_row(sheets_manager.sheet_tips, user_id, tip_values)
+        
+        # Формируем ответ
+        response = f"✅ Доход добавлен:\n"
+        if source == "🏢 Фирма":
+            response += f"🔢 Заявка: {request_number}\n"
+            response += f"💵 Сумма чека: {repair_amount} ₽\n"
+            response += f"💸 Твой доход: {my_income} ₽\n"
+            response += f"🏢 Долг фирме: {debt_to_firm} ₽\n"
+            response += f"📋 Статус: {payment_status}\n"
+        else:
+            response += f"💸 Твой доход: {my_income} ₽\n"
+            
+        if tips > 0:
+            response += f"💝 Чаевые: +{tips} ₽\n"
+            response += f"🎯 Итого: {my_income + tips} ₽"
+        
+        await message.answer(response, reply_markup=main_kb)
         await state.clear()
-    except:
-        await message.answer("Введите число!")
+        
+    except ValueError:
+        await message.answer("❌ Введи нормальную сумму для чаевых (или 0 если нет):")
+    except Exception as e:
+        await message.answer("❌ Ошибка при добавлении дохода")
 
-# --- РАБОТА (ХОЛОДИЛЬЩИК) ---
-@router.message(F.text == "❄️ Работа")
-async def work_menu(message: Message):
-    await message.answer("Раздел 'Работа'", reply_markup=get_work_kb())
+# ========== ЧАЕВЫЕ ==========
+@router.message(lambda m: m.text == "💰 Чаевые")
+async def add_tips_start(message: Message, state: FSMContext):
+    await state.set_state(TipsStates.type)
+    await message.answer("Что за дополнительный доход?", reply_markup=tips_kb)
 
-@router.message(F.text.in_(["🏢 Фирма", "📱 Авито", "👥 Сарафанка"]))
-async def start_work_entry(message: Message, state: FSMContext):
-    await state.update_data(source=message.text)
-    if message.text == "🏢 Фирма":
-        await state.set_state(FinanceStates.work_request_num)
-        await message.answer("Номер заявки:")
-    else:
-        await state.set_state(FinanceStates.work_repair_sum)
-        await message.answer("Сумма по чеку:")
+@router.message(TipsStates.type)
+async def process_tips_type(message: Message, state: FSMContext):
+    if await cancel_handler(message, state):
+        return
+        
+    await state.update_data(tip_type=message.text)
+    await state.set_state(TipsStates.amount)
+    await message.answer("💰 Сколько получил?")
 
-# ... (далее идет ваша старая логика из income.py, но с записью типа "Работа")
+@router.message(TipsStates.amount)
+async def process_tips_amount(message: Message, state: FSMContext):
+    try:
+        amount = float(message.text.replace(',', '.'))
+        await state.update_data(amount=amount)
+        await state.set_state(TipsStates.comment)
+        await message.answer("📝 Комментарий (от кого/за что):")
+        
+    except ValueError:
+        await message.answer("❌ Введи нормальную сумму:")
+
+@router.message(TipsStates.comment)
+async def process_tips_comment(message: Message, state: FSMContext):
+    try:
+        user_id = str(message.from_user.id)
+        
+        data = await state.get_data()
+        tip_type = data["tip_type"]
+        amount = data["amount"]
+        comment = message.text
+        
+        today = datetime.date.today().strftime("%d.%m.%Y")
+        values = [today, tip_type, amount, comment]
+        sheets_manager.append_user_row(sheets_manager.sheet_tips, user_id, values)
+        
+        await message.answer(f"✅ Чаевые добавлены: {amount} ₽\n{tip_type}: {comment}", reply_markup=main_kb)
+        await state.clear()
+        
+    except Exception as e:
+        await message.answer("❌ Ошибка при добавлении чаевых")
+
+# Обработка кнопки "Назад"
+@router.message(lambda m: m.text == "⬅️ Назад")
+async def back_to_main(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Главное меню:", reply_markup=main_kb)
