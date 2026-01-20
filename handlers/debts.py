@@ -15,6 +15,7 @@ class DebtStates(StatesGroup):
     name = State()
     total_amount = State()
     percent = State()
+    payment_amount = State()
 
 @router.message(F.text == "📉 Долги/Кредиты")
 async def debt_main(message: Message):
