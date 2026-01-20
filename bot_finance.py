@@ -43,7 +43,6 @@ async def main():
             firm_payment_router,
             delete_router,  # ДОБАВЬ ЭТУ СТРОЧКУ
             base_router
-            
         ]
         
         for router in routers:
@@ -65,5 +64,6 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
 
