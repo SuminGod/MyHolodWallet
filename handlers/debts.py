@@ -115,16 +115,67 @@ async def pay_debt_start(message: Message, state: FSMContext):
     builder.add(KeyboardButton(text="⬅️ Назад"))
     builder.adjust(2)
     
-    await state.set_state(DebtStates.payment_amount)
-    await message.answer("Выберите долг для погашения:", reply_markup=builder.as_markup(resize_keyboard=True))
+    # Устанавливаем состояние ожидания ВЫБОРА долга
+    await state.set_state(DebtStates.payment_amount) 
+    await message.answer(
+        "Выберите долг для погашения из списка:", 
+        reply_markup=builder.as_markup(resize_keyboard=True)
+    )
 
 @router.message(DebtStates.payment_amount)
-async def process_payment_final(message: Message, state: FSMContext):
+async def process_debt_choice(message: Message, state: FSMContext):
     if message.text == "⬅️ Назад":
         await state.clear()
-        await message.answer("Отменено", reply_markup=debt_kb)
+        await message.answer("Отменено", reply_markup=main_kb)
         return
 
-    # Здесь можно добавить логику вычета суммы, как мы обсуждали ранее
-    await message.answer(f"💳 Вы выбрали «{message.text}». Введите сумму платежа:")
-    await state.clear() # Временная очистка, чтобы бот не "висел"
+    # Сохраняем название выбранного долга
+    await state.update_data(selected_debt=message.text)
+    
+    # Переключаем состояние на ожидание СУММЫ
+    await state.set_state(DebtStates.total_amount) 
+    
+    await message.answer(
+        f"💳 Вы выбрали «{message.text}».\nВведите сумму, которую вы внесли:",
+        reply_markup=ReplyKeyboardBuilder().add(KeyboardButton(text="⬅️ Назад")).as_markup(resize_keyboard=True)
+    )
+
+@router.message(DebtStates.total_amount)
+async def process_payment_sum(message: Message, state: FSMContext):
+    if message.text == "⬅️ Назад":
+        await state.clear()
+        await message.answer("Отменено", reply_markup=main_kb)
+        return
+
+    try:
+        payment = float(message.text.replace(' ', '').replace(',', '.'))
+        data = await state.get_data()
+        debt_name = data.get('selected_debt')
+        user_id = str(message.from_user.id)
+
+        # 1. Записываем в расходы
+        today = datetime.date.today().strftime("%d.%m.%Y")
+        exp_values = [user_id, today, "Личное", f"💳 Погашение: {debt_name}", payment]
+        sheets_manager.append_user_row(sheets_manager.sheet_expense, user_id, exp_values)
+
+        # 2. Логика проверки остатка (для ответа пользователю)
+        debts = sheets_manager.get_user_data(sheets_manager.sheet_debts, user_id)
+        current_rem = 0
+        for row in debts:
+            if row[1] == debt_name:
+                current_rem = float(str(row[3]).replace(',', '.'))
+                break
+        
+        new_rem = max(0, current_rem - payment)
+
+        await message.answer(
+            f"✅ Платеж {payment:,.2f} ₽ учтен!\n"
+            f"📉 Остаток по долгу «{debt_name}» в таблице был {current_rem:,.2f} ₽.\n"
+            f"Теперь ориентировочно: {new_rem:,.2f} ₽.\n\n"
+            f"Запись добавлена в лист 'Expense'.",
+            reply_markup=main_kb
+        )
+        await state.clear()
+        
+    except ValueError:
+        await message.answer("❌ Введите сумму числом (например: 5000)")
