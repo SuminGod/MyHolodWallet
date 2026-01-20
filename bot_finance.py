@@ -25,7 +25,7 @@ async def main():
     # =======================
     try:
         from config import TOKEN
-        from handlers import base_router, income_router, expense_router, reports_router, bets_router, firm_payment_router, admin_router, delete_router
+        from handlers import base_router, income_router, expense_router, reports_router, bets_router, firm_payment_router, admin_router, delete_router,debts_router,
         
         logger.info("🚀 Инициализация бота...")
         bot = Bot(token=TOKEN)
@@ -42,7 +42,8 @@ async def main():
             bets_router,
             firm_payment_router,
             delete_router,  # ДОБАВЬ ЭТУ СТРОЧКУ
-            base_router
+            base_router,
+            debts_router
         ]
         
         for router in routers:
@@ -64,3 +65,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
