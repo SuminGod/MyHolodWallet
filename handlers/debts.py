@@ -14,9 +14,10 @@ logger = logging.getLogger(__name__)
 
 class DebtStates(StatesGroup):
     name = State()
-    total_amount = State()
-    percent = State()
-    payment_amount = State()
+    total_amount = State() # Используется ТОЛЬКО при создании нового долга
+    percent = State()      # Используется ТОЛЬКО при создании нового долга
+    payment_amount = State() # Выбор долга для оплаты
+    pay_sum = State()        # Ввод суммы платежа (НОВОЕ)
 
 # --- ПРОСМОТР СПИСКА ---
 @router.message(F.text == "📉 Долги/Кредиты")
@@ -98,7 +99,7 @@ async def add_debt_final(message: Message, state: FSMContext):
         logger.error(f"Ошибка сохранения долга: {e}")
         await message.answer("❌ Ошибка при записи в таблицу.")
 
-# --- ВНЕСЕНИЕ ПЛАТЕЖА (С ВЫВОДОМ СУММЫ В СООБЩЕНИИ) ---
+# --- ВНЕСЕНИЕ ПЛАТЕЖА (ИСПРАВЛЕННАЯ ЛОГИКА) ---
 @router.message(F.text == "💸 Внести платеж")
 async def pay_debt_start(message: Message, state: FSMContext):
     user_id = str(message.from_user.id)
@@ -109,8 +110,6 @@ async def pay_debt_start(message: Message, state: FSMContext):
         return
     
     builder = ReplyKeyboardBuilder()
-    
-    # Кнопки только с названиями
     for row in debts:
         builder.add(KeyboardButton(text=row[1]))
     
@@ -134,47 +133,47 @@ async def process_debt_choice(message: Message, state: FSMContext):
     user_id = str(message.from_user.id)
     debts = sheets_manager.get_user_data(sheets_manager.sheet_debts, user_id)
     
-    # Ищем сумму конкретного долга в таблице
     current_val = 0
     for row in debts:
         if row[1] == debt_name:
             current_val = float(str(row[3]).replace(',', '.'))
             break
 
-    # Сохраняем данные, чтобы проверить их при вводе суммы
     await state.update_data(selected_debt=debt_name, max_limit=current_val)
-    await state.set_state(DebtStates.total_amount) 
     
-    # Выводим информацию ровно так, как ты просил
+    # ВАЖНО: Переходим в состояние pay_sum, а не total_amount!
+    await state.set_state(DebtStates.pay_sum) 
+    
     await message.answer(
         f"💳 Вы выбрали «{debt_name}». Долг: {current_val:,.2f}\n"
         f"Введите сумму, которую вы внесли:",
         reply_markup=ReplyKeyboardBuilder().add(KeyboardButton(text="⬅️ Назад")).as_markup(resize_keyboard=True)
     )
 
-@router.message(DebtStates.total_amount)
-async def process_payment_sum(message: Message, state: FSMContext):
+# НОВЫЙ ОБРАБОТЧИК: Ловит ввод суммы и СРАЗУ сохраняет
+@router.message(DebtStates.pay_sum)
+async def process_payment_final(message: Message, state: FSMContext):
     if message.text == "⬅️ Назад":
         await state.clear()
         await message.answer("Отменено", reply_markup=debt_kb)
         return
 
     try:
+        # Убираем пробелы и меняем запятую на точку
         payment = float(message.text.replace(' ', '').replace(',', '.'))
         data = await state.get_data()
         debt_name = data.get('selected_debt')
         max_limit = data.get('max_limit', 0)
         user_id = str(message.from_user.id)
 
-        # Проверка, чтобы не внести лишнего
         if payment > max_limit:
             await message.answer(
                 f"⚠️ Сумма ({payment:,.2f}) больше долга ({max_limit:,.2f}).\n"
-                f"Введите корректную сумму или '⬅️ Назад'."
+                f"Введите корректную сумму или нажмите '⬅️ Назад'."
             )
             return
 
-        # 1. Записываем в лист расходов (Expense)
+        # Записываем в лист расходов (Expense)
         today = datetime.date.today().strftime("%d.%m.%Y")
         exp_values = [user_id, today, "Личное", f"💳 Погашение: {debt_name}", payment]
         sheets_manager.append_user_row(sheets_manager.sheet_expense, user_id, exp_values)
@@ -189,4 +188,4 @@ async def process_payment_sum(message: Message, state: FSMContext):
         await state.clear()
         
     except ValueError:
-        await message.answer("❌ Введите сумму числом.")
+        await message.answer("❌ Введите сумму числом (например: 500.50)")
