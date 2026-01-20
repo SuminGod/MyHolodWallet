@@ -20,7 +20,7 @@ class UserSheetsManager:
         self.sheet_income = self.workbook.worksheet("Доходы")
         self.sheet_expense = self.workbook.worksheet("Расходы") 
         self.sheet_tips = self.workbook.worksheet("Чаевые")
-        self.sheet_debts = self.spreadsheet.worksheet("Долги")
+        self.sheet_debts = self.workbook.worksheet("Долги")
     
     def is_user_allowed(self, user_id: str) -> bool:
         return str(user_id) in ALLOWED_USERS
