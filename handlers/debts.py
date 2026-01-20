@@ -7,6 +7,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from utils.user_manager import sheets_manager
 from keyboards import main_kb, debt_kb
+from aiogram.utils.keyboard import ReplyKeyboardBuilder
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -101,60 +102,72 @@ async def add_debt_final(message: Message, state: FSMContext):
         logger.error(f"Ошибка сохранения долга: {e}")
         await message.answer(f"❌ Ошибка при записи в таблицу.")
 
-# --- ВНЕСЕНИЕ ПЛАТЕЖА ---
+#ВНЕСЕНИЕ ПЛАТЕЖА
+
 @router.message(F.text == "💸 Внести платеж")
 async def pay_debt_start(message: Message, state: FSMContext):
     user_id = str(message.from_user.id)
-    # Получаем данные пользователя из листа Debts
     debts = sheets_manager.get_user_data(sheets_manager.sheet_debts, user_id)
     
     if not debts:
         await message.answer("⚠️ У вас нет активных долгов для оплаты.")
         return
     
-    # Сохраняем долги в состояние, чтобы не скачивать их снова
-    await state.update_data(user_debts=debts)
-    await state.set_state(DebtStates.payment_amount)
+    # Создаем клавиатуру с названиями долгов
+    builder = ReplyKeyboardBuilder()
+    for row in debts:
+        # row[1] — это название долга
+        builder.add(KeyboardButton(text=row[1]))
     
-    # Показываем название первого долга для оплаты (индекс 1, так как 0 - это ID)
-    debt_name = debts[0][1] 
-    await message.answer(f"💰 Введите сумму платежа для погашения «{debt_name}»:")
+    builder.add(KeyboardButton(text="⬅️ Назад"))
+    builder.adjust(2) # Кнопки в два ряда
+    
+    await state.set_state(DebtStates.payment_amount) # Используем существующее состояние для простоты
+    await message.answer(
+        "Выберите долг, который хотите погасить:", 
+        reply_markup=builder.as_markup(resize_keyboard=True)
+    )
 
 @router.message(DebtStates.payment_amount)
-async def process_payment(message: Message, state: FSMContext):
+async def process_payment_selection(message: Message, state: FSMContext):
+    if message.text == "⬅️ Назад":
+        await state.clear()
+        await message.answer("Действие отменено", reply_markup=debt_kb)
+        return
+
+    # Сохраняем название выбранного долга в состояние
+    await state.update_data(selected_debt_name=message.text)
+    
+    # Переходим к запросу суммы
+    await state.set_state(DebtStates.total_amount) # Временно используем это состояние или создайте новое DebtStates.pay_sum
+    await message.answer(
+        f"💳 Вы выбрали «{message.text}».\nВведите сумму платежа:",
+        reply_markup=ReplyKeyboardBuilder().add(KeyboardButton(text="⬅️ Назад")).as_markup(resize_keyboard=True)
+    )
+
+# Обработчик ввода суммы платежа
+@router.message(DebtStates.total_amount)
+async def process_payment_final(message: Message, state: FSMContext):
+    if message.text == "⬅️ Назад":
+        await state.clear()
+        await message.answer("Отменено", reply_markup=debt_kb)
+        return
+
     try:
-        # Очищаем ввод
-        payment_raw = message.text.replace(' ', '').replace(',', '.')
-        payment = float(payment_raw)
-        
+        payment = float(message.text.replace(' ', '').replace(',', '.'))
         data = await state.get_data()
+        debt_name = data.get('selected_debt_name')
         user_id = str(message.from_user.id)
         
-        # Берем информацию о первом долге из сохраненных данных
-        # Структура: ID(0), Название(1), Нач.сумма(2), Остаток(3), %(4)
-        debt_info = data['user_debts'][0]
-        debt_name = debt_info[1]
-        current_remaining = float(str(debt_info[3]).replace(',', '.'))
-        
-        # 1. Записываем платеж в лист РАСХОДОВ (Expense)
+        # 1. Записываем в расходы
         today = datetime.date.today().strftime("%d.%m.%Y")
-        # ID(0), Дата(1), Тип(2), Кат(3), Сумма(4)
         exp_values = [user_id, today, "Личное", f"💳 Погашение: {debt_name}", payment]
         sheets_manager.append_user_row(sheets_manager.sheet_expense, user_id, exp_values)
         
-        # 2. Высчитываем новый остаток
-        new_remaining = max(0, current_remaining - payment)
-        
         await message.answer(
-            f"✅ Платеж {payment:,.0f} ₽ учтен!\n"
-            f"📉 Остаток по долгу «{debt_name}»: {new_remaining:,.0f} ₽\n\n"
-            f"Данные обновлены в таблице расходов.", 
+            f"✅ Платеж {payment:,.0f} ₽ по долгу «{debt_name}» учтен в расходах!",
             reply_markup=main_kb
         )
         await state.clear()
-        
     except ValueError:
-        await message.answer("❌ Введите сумму платежа цифрами.")
-    except Exception as e:
-        logger.error(f"Ошибка при внесении платежа: {e}")
-        await message.answer("❌ Произошла ошибка при обработке платежа.")
+        await message.answer("❌ Пожалуйста, введите сумму числом.")
