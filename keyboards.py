@@ -52,3 +52,10 @@ def get_debt_kb():
 
 # Инициализация
 main_kb = get_main_kb()
+income_kb = get_income_kb()
+expense_kb = get_expense_kb()
+work_kb = get_work_kb()
+debt_kb = get_debt_kb()
+report_kb = get_report_kb() # ТА САМАЯ СТРОЧКА, КОТОРОЙ НЕ ХВАТАЛО
+firm_report_kb = get_firm_report_kb()
+
