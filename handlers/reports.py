@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 TARGET_MONTHLY_INCOME = 150000
 
 async def get_report_data(user_id, start_date, end_date):
-    """Получение и фильтрация данных из таблиц"""
+    # Получаем данные пользователя из таблиц
     incomes = sheets_manager.get_user_data(sheets_manager.sheet_income, user_id)
     expenses = sheets_manager.get_user_data(sheets_manager.sheet_expense, user_id)
     
@@ -24,57 +24,64 @@ async def get_report_data(user_id, start_date, end_date):
         "exp_cats": {}
     }
 
-    # Считаем доходы
+    # ОБРАБОТКА ДОХОДОВ
+    # Структура: ID(0), Дата(1), Тип(2), Кат(3), №(4), Чек(5), Доход(6)
     for row in incomes:
         try:
-            # Дата в row[0], Тип в row[1], Доход в row[5]
-            r_date = datetime.datetime.strptime(row[0], "%d.%m.%Y").date()
+            if len(row) < 7: continue
+            r_date = datetime.datetime.strptime(row[1].strip(), "%d.%m.%Y").date()
             if start_date <= r_date <= end_date:
-                amount = float(row[5])
-                if row[1] == "Работа":
+                r_type = row[2].strip()
+                # Сумма дохода теперь в индексе 6
+                amount = float(str(row[6]).replace(',', '.').replace(' ', ''))
+                
+                if r_type == "Работа":
                     data["work_inc"] += amount
                 else:
                     data["pers_inc"] += amount
-        except:
+        except Exception as e:
+            logger.warning(f"Ошибка в строке дохода: {e}")
             continue
 
-    # Считаем расходы
+    # ОБРАБОТКА РАСХОДОВ
+    # Структура: ID(0), Дата(1), Тип(2), Кат(3), Сумма(4)
     for row in expenses:
         try:
-            # Дата в row[0], Тип в row[1], Категория в row[2], Сумма в row[3]
-            r_date = datetime.datetime.strptime(row[0], "%d.%m.%Y").date()
+            if len(row) < 5: continue
+            r_date = datetime.datetime.strptime(row[1].strip(), "%d.%m.%Y").date()
             if start_date <= r_date <= end_date:
-                amount = float(row[3])
-                cat = row[2]
-                if row[1] == "Работа":
+                r_type = row[2].strip()
+                cat = row[3].strip()
+                # Сумма расхода теперь в индексе 4
+                amount = float(str(row[4]).replace(',', '.').replace(' ', ''))
+                
+                if r_type == "Работа":
                     data["work_exp"] += amount
                 else:
                     data["pers_exp"] += amount
                 
                 data["exp_cats"][cat] = data["exp_cats"].get(cat, 0) + amount
-        except:
+        except Exception as e:
+            logger.warning(f"Ошибка в строке расхода: {e}")
             continue
         
     return data
 
 def create_charts(data, title):
-    """Создание графиков через matplotlib"""
-    # Создаем фигуру с двумя графиками
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
     
-    # 1. Круговая диаграмма расходов
+    # Расходы
     if data["exp_cats"]:
-        ax1.pie(data["exp_cats"].values(), labels=data["exp_cats"].keys(), autopct='%1.1f%%')
-        ax1.set_title("Структура расходов")
+        ax1.pie(data["exp_cats"].values(), labels=data["exp_cats"].keys(), autopct='%1.1f%%', startangle=140)
+        ax1.set_title("Анализ расходов")
     else:
-        ax1.text(0.5, 0.5, "Нет данных", ha='center')
+        ax1.text(0.5, 0.5, "Нет расходов", ha='center')
 
-    # 2. Столбчатая диаграмма (Доходы vs Расходы)
-    total_inc = data["work_inc"] + data["pers_inc"]
-    total_exp = data["work_exp"] + data["pers_exp"]
-    
-    ax2.bar(['Доходы', 'Расходы'], [total_inc, total_exp], color=['#4CAF50', '#F44336'])
-    ax2.set_title(f"Баланс: {total_inc - total_exp:,.0f} ₽")
+    # Баланс
+    total_in = data["work_inc"] + data["pers_inc"]
+    total_out = data["work_exp"] + data["pers_exp"]
+    ax2.bar(['Доход', 'Расход'], [total_in, total_out], color=['#2ecc71', '#e74c3c'])
+    ax2.set_title(f"Баланс: {total_in - total_out:,.0f} ₽")
 
     buf = io.BytesIO()
     plt.savefig(buf, format='png')
@@ -84,7 +91,7 @@ def create_charts(data, title):
 
 @router.message(F.text == "📊 Отчет")
 async def show_reports_menu(message: Message):
-    await message.answer("Выберите период отчета:", reply_markup=report_kb)
+    await message.answer("Выберите период:", reply_markup=report_kb)
 
 @router.message(F.text.in_(["📅 Сегодня", "📆 Неделя", "🗓️ Месяц"]))
 async def handle_report_request(message: Message):
@@ -93,33 +100,33 @@ async def handle_report_request(message: Message):
     
     if message.text == "📅 Сегодня":
         start_date = today
-        title = "за сегодня"
+        title = "сегодня"
     elif message.text == "📆 Неделя":
         start_date = today - datetime.timedelta(days=7)
-        title = "за неделю"
+        title = "неделю"
     else:
         start_date = today.replace(day=1)
-        title = "за месяц"
+        title = "месяц"
 
     data = await get_report_data(user_id, start_date, today)
     
-    # Шкала прогресса к 150к
     total_income = data["work_inc"] + data["pers_inc"]
     percent = min(int((total_income / TARGET_MONTHLY_INCOME) * 100), 100)
     filled = int(percent / 10)
-    progress_bar = f"\n\n🎯 Цель 150к: [{'✅'*filled}{'⬜'*(10-filled)}] {percent}%"
+    progress_bar = f"\n\n🎯 Цель 150к: [{'🔵'*filled}{'⚪'*(10-filled)}] {percent}%"
 
     report_text = (
-        f"📊 ОТЧЕТ {title.upper()}\n"
-        f"--------------------------\n"
-        f"🛠 Работа: {data['work_inc']:,.0f} ₽\n"
-        f"👤 Личное: {data['pers_inc']:,.0f} ₽\n"
-        f"📤 Расходы: {data['work_exp'] + data['pers_exp']:,.0f} ₽\n"
-        f"⚖️ Чистыми: {total_income - (data['work_exp'] + data['pers_exp']):,.0f} ₽"
+        f"📊 ОТЧЕТ ЗА {title.upper()}\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"🛠 Работа:  {data['work_inc']:,.0f} ₽\n"
+        f"👤 Личное:  {data['pers_inc']:,.0f} ₽\n"
+        f"🔻 Расходы: {data['work_exp'] + data['pers_exp']:,.0f} ₽\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"💰 ИТОГО:   {total_income - (data['work_exp'] + data['pers_exp']):,.0f} ₽"
         f"{progress_bar if message.text != '📅 Сегодня' else ''}"
     )
 
-    if message.text in ["📆 Неделя", "🗓️ Месяц"] and data["exp_cats"]:
+    if message.text in ["📆 Неделя", "🗓️ Месяц"] and (data["work_inc"] > 0 or data["work_exp"] > 0):
         chart_buf = create_charts(data, title)
         photo = BufferedInputFile(chart_buf.read(), filename="report.png")
         await message.answer_photo(photo, caption=report_text, reply_markup=main_kb)
