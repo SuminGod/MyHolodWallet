@@ -159,7 +159,6 @@ async def process_payment_final(message: Message, state: FSMContext):
         return
 
     try:
-        # Убираем пробелы и меняем запятую на точку
         payment = float(message.text.replace(' ', '').replace(',', '.'))
         data = await state.get_data()
         debt_name = data.get('selected_debt')
@@ -167,25 +166,46 @@ async def process_payment_final(message: Message, state: FSMContext):
         user_id = str(message.from_user.id)
 
         if payment > max_limit:
-            await message.answer(
-                f"⚠️ Сумма ({payment:,.2f}) больше долга ({max_limit:,.2f}).\n"
-                f"Введите корректную сумму или нажмите '⬅️ Назад'."
-            )
+            await message.answer(f"⚠️ Сумма ({payment:,.2f}) больше долга ({max_limit:,.2f}).")
             return
 
-        # Записываем в лист расходов (Expense)
+        # 1. Записываем в лист расходов (Expense)
         today = datetime.date.today().strftime("%d.%m.%Y")
         exp_values = [user_id, today, "Личное", f"💳 Погашение: {debt_name}", payment]
         sheets_manager.append_user_row(sheets_manager.sheet_expense, user_id, exp_values)
 
+        # 2. ОБНОВЛЕНИЕ ОСТАТКА В ТАБЛИЦЕ DEBTS
         new_rem = max(0, max_limit - payment)
+        
+        # Получаем все данные из листа долгов
+        all_debts = sheets_manager.sheet_debts.get_all_values()
+        
+        # Ищем строку: ID пользователя в столбце A и Название в столбце B
+        row_index = -1
+        for i, row in enumerate(all_debts):
+            if len(row) > 1 and row[0] == user_id and row[1] == debt_name:
+                row_index = i + 1  # +1 так как в Google Sheets нумерация с 1
+                break
+        
+        if row_index != -1:
+            # Обновляем ячейку в столбце D (4-й столбец) — новый остаток
+            sheets_manager.sheet_debts.update_cell(row_index, 4, new_rem)
+            
+            # Если долг погашен полностью (остаток 0), можно либо оставить 0, 
+            # либо удалить строку. Давай пока просто оставим 0 для истории.
+            status_msg = "Долг полностью погашен! 🎉" if new_rem == 0 else f"Остаток обновлен: {new_rem:,.2f} ₽"
+        else:
+            status_msg = "⚠️ Запись в таблице долгов не найдена, но расход записан."
 
         await message.answer(
             f"✅ Платеж {payment:,.2f} ₽ принят!\n"
-            f"📉 Остаток по «{debt_name}»: {new_rem:,.2f} ₽",
+            f"📉 {status_msg}",
             reply_markup=main_kb
         )
         await state.clear()
         
     except ValueError:
-        await message.answer("❌ Введите сумму числом (например: 500.50)")
+        await message.answer("❌ Введите сумму числом.")
+    except Exception as e:
+        logger.error(f"Ошибка при обновлении остатка: {e}")
+        await message.answer("❌ Ошибка при связи с таблицей.")
