@@ -37,16 +37,21 @@ async def get_report_data(user_id, start_date, end_date):
                 else: data["pers_inc"] += amount
         except: continue
 
-    # 2. ЧАЕВЫЕ (Исправлено)
     for row in tips:
         try:
-            if len(row) < 3: continue
+            # Проверяем, что в строке хватает столбцов (минимум до D)
+            if len(row) < 4: continue 
+            
             r_date = datetime.datetime.strptime(row[1].strip(), "%d.%m.%Y").date()
             if start_date <= r_date <= end_date:
-                amount = clean_float(row[2])
+                # Берем сумму из столбца D (индекс 3)
+                amount = clean_float(row[3]) 
+                
                 data["tips_total"] += amount
-                data["work_inc"] += amount # Чаевые плюсуем к работе
-        except: continue
+                data["work_inc"] += amount # Плюсуем к рабочему доходу
+        except Exception as e:
+            logger.error(f"Ошибка парсинга строки чаевых: {e}")
+            continue
 
     # 3. Расходы (Учитываем смещение столбцов E=4)
     for row in expenses:
@@ -112,3 +117,4 @@ async def handle_report_request(message: Message):
         await message.answer_photo(photo, caption=report_text, parse_mode="Markdown")
     else:
         await message.answer(report_text, parse_mode="Markdown")
+
